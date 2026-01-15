@@ -3,9 +3,11 @@
 // @namespace   http://tampermonkey.net/
 // @version     3.0
 // @description Dùng font Be Vietnam Pro Variable đã cài trong máy cho Dailymotion
-// @author      You
+// @author      Nguyễn Ngọc Tuyên
 // @match       *://*/*
 // @run-at      document-start
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
 // ==/UserScript==
 
 (function() {
