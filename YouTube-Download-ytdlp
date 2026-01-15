@@ -1,0 +1,103 @@
+// ==UserScript==
+// @name        YouTube Download yt-dlp (Translate Style)
+// @namespace   http://tampermonkey.net/
+// @match       *://*.youtube.com/*
+// @grant       none
+// @run-at      document-idle
+// @version     11.1
+// @author      Nguyễn Ngọc Tuyên
+// @description Tải video YouTube với phong cách nút giống nút Dịch Comment
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/YouTube-Download-ytdlp
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/YouTube-Download-ytdlp
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const BTN_ID = 'universal-ytdlp-btn';
+
+    const btoaUrl = (url) => {
+        return btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/\=/g, "");
+    };
+
+    const triggerDownload = () => {
+        const currentUrl = window.location.href;
+        const encodedUrl = btoaUrl(currentUrl);
+        const encodedRef = btoaUrl(currentUrl);
+        const finalUrl = `mpv://ytdl/${encodedUrl}/?referer=${encodedRef}`;
+        window.location.href = finalUrl;
+    };
+
+    const createSafeSvgIcon = () => {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.style.cssText = 'width: 18px; height: 18px; fill: currentColor; margin-right: 6px;';
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M17 18v1H6v-1h11zm-.5-6.6-.7-.7-3.8 3.7V4h-1v10.4l-3.8-3.8-.7.7 5 5 5-4.9z');
+        svg.appendChild(path);
+        return svg;
+    };
+
+    const createButton = () => {
+        const btn = document.createElement('button');
+        btn.id = BTN_ID;
+
+        // Style giả lập nút "Dịch Comment"
+        btn.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: 1px solid var(--yt-spec-10-percent-layer, #e5e5e5);
+            border-radius: 18px;
+            padding: 0 15px;
+            height: 34px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-family: "Roboto","Arial",sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--yt-spec-text-primary);
+            transition: background 0.2s;
+            white-space: nowrap;
+            width: auto;
+        `;
+
+        // Hiệu ứng hover
+        btn.onmouseover = () => btn.style.background = 'var(--yt-spec-10-percent-layer, rgba(0,0,0,0.05))';
+        btn.onmouseout = () => btn.style.background = 'transparent';
+
+        // Icon
+        btn.appendChild(createSafeSvgIcon());
+
+        // Text
+        const textSpan = document.createElement('span');
+        textSpan.textContent = 'Tải xuống';
+        btn.appendChild(textSpan);
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerDownload();
+        });
+
+        return btn;
+    };
+
+    const insertButton = () => {
+        if (!window.location.pathname.startsWith('/watch')) return;
+        if (document.getElementById(BTN_ID)) return;
+
+        // Tìm khu vực chứa nút "Dịch Comment" hoặc "Sắp xếp"
+        // Container chính xác nhất là thẻ #title bên trong header bình luận
+        const commentHeader = document.querySelector('ytd-comments-header-renderer #title');
+
+        if (commentHeader) {
+            const btn = createButton();
+            commentHeader.appendChild(btn);
+        }
+    };
+
+    // Chạy kiểm tra mỗi giây để chèn nút khi trang load xong
+    setInterval(insertButton, 1000);
+})();
