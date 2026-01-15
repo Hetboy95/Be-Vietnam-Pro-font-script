@@ -1,0 +1,261 @@
+// ==UserScript==
+// @name        Handlers Helper
+// @include     *://*/*
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @grant       GM_deleteValue
+// @grant       GM_addStyle
+// @grant       GM_registerMenuCommand
+// @version     3.9
+// @author      Nguyễn Ngọc Tuyên
+// @description Helper for protocol_hook.lua - Optimized
+// @namespace   Violentmonkey Scripts
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/YT-Drag-mpv
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/YT-Drag-mpv
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // --- CONFIGURATION ---
+    const CONFIG = {
+        guide: 'Value: pipe ytdl stream mpv iptv',
+        winWidth: 400,
+        winHeight: 640,
+        directions: GM_getValue('total_direction', 4),
+        livechat: GM_getValue('livechat', false),
+        hlsDomains: GM_getValue('hlsdomain', 'cdn.animevui.com').split(',').map(d => d.trim()),
+        actions: {
+            UP: GM_getValue('UP', 'pipe'),
+            DOWN: GM_getValue('DOWN', 'ytdl'),
+            LEFT: GM_getValue('LEFT', 'stream'),
+            RIGHT: GM_getValue('RIGHT', 'mpv')
+        }
+    };
+
+    // --- MENU COMMANDS ---
+    const registerCmd = (name, val, key) => {
+        GM_registerMenuCommand(`${name}: ${val}`, () => {
+            const p = window.prompt(CONFIG.guide, val);
+            if (p) {
+                GM_setValue(key, p);
+                window.location.reload();
+            }
+        });
+    };
+
+    registerCmd('↑', CONFIG.actions.UP, 'UP');
+    registerCmd('↓', CONFIG.actions.DOWN, 'DOWN');
+    registerCmd('←', CONFIG.actions.LEFT, 'LEFT');
+    registerCmd('→', CONFIG.actions.RIGHT, 'RIGHT');
+
+    GM_registerMenuCommand('HLS Force', () => {
+        const p = window.prompt('Example: 1.com,2.com', CONFIG.hlsDomains.join(','));
+        if (p) {
+            GM_setValue('hlsdomain', p);
+            window.location.reload();
+        }
+    });
+
+    GM_registerMenuCommand(`Live Chat: ${CONFIG.livechat}`, () => {
+        GM_setValue('livechat', !CONFIG.livechat);
+        window.location.reload();
+    });
+
+    GM_registerMenuCommand(`Total Direction: ${CONFIG.directions}`, () => {
+        GM_setValue('total_direction', CONFIG.directions === 4 ? 8 : 4);
+        window.location.reload();
+    });
+
+    // --- HELPERS ---
+    const btoaUrl = (url) => btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/\=/g, "");
+
+    const popout = (url) => {
+        window.open(url, "", `fullscreen=no,toolbar=no,titlebar=no,menubar=no,location=no,width=${CONFIG.winWidth},height=${CONFIG.winHeight}`);
+    };
+
+    const livechatopener = (url) => {
+        try {
+            const nurl = new URL(url);
+            if (nurl.href.includes('youtube.com/watch')) {
+                const v = nurl.searchParams.get('v');
+                if (v) popout(`https://www.youtube.com/live_chat?is_popout=1&v=${v}`);
+            } else if (nurl.href.includes('twitch.tv')) {
+                popout(`https://www.twitch.tv/popout${nurl.pathname}/chat?popout=`);
+            } else if (nurl.href.includes('nimo.tv')) {
+                const el = document.querySelector(`a[href="${nurl.pathname}"] .nimo-player.n-as-full`);
+                if (el) {
+                    const streamid = el.id.replace('home-hot-', '');
+                    popout(`https://www.nimo.tv/popout/chat/${streamid}`);
+                }
+            }
+        } catch (e) { console.error('Livechat error:', e); }
+    };
+
+    let collectedUrls = new Set();
+
+    const executeAction = (url, type) => {
+        let app = type;
+        let isHls = CONFIG.hlsDomains.some(domain => url.includes(domain) || document.domain.includes(domain));
+
+        if (isHls && type === 'stream') url = url.replace(/^https?:/, 'hls:');
+        if (url.startsWith('mpv://')) return (location.href = url);
+
+        // Gom link đã chọn
+        let targetUrl = url;
+        if (collectedUrls.size > 0) {
+            // Xóa style viền
+            collectedUrls.forEach(el => {
+                el.style.boxSizing = '';
+                el.style.border = '';
+            });
+            // Nếu link hiện tại không nằm trong danh sách gom, lấy danh sách gom làm ưu tiên
+            // Logic cũ của bạn hơi lạ chỗ này, tôi giữ nguyên logic gom chuỗi
+            const links = Array.from(collectedUrls).map(el => el.href || el.src).join(' ');
+             // Reset
+            collectedUrls.clear();
+            targetUrl = links;
+        }
+
+        // Mapping app names
+        const map = { 'pipe': 'mpvy', 'iptv': 'list', 'mpv': 'play', 'vid': 'play' };
+        if (map[type]) app = map[type];
+
+        const encodedUrl = btoaUrl(targetUrl);
+        const encodedRef = btoaUrl(location.href);
+        let finalUrl = `mpv://${app}/${encodedUrl}/?referer=${encodedRef}`;
+
+        if (isHls) finalUrl += '?hls=1';
+        if (type === 'stream' && CONFIG.livechat) livechatopener(url);
+
+        console.log('Opening:', finalUrl);
+        location.href = finalUrl;
+    };
+
+    // --- DRAG LOGIC ---
+    const getDirection = (x1, y1, x2, y2) => {
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        // Vùng chết (Deadzone) để tránh rung tay
+        if (absDx < 10 && absDy < 10) return 5;
+
+        if (CONFIG.directions === 4) {
+            if (absDx < absDy) return dy > 0 ? 8 : 2; // Xuống : Lên
+            return dx > 0 ? 6 : 4; // Phải : Trái
+        } else {
+            const t = dy / dx;
+            if (dx === 0) return dy > 0 ? 8 : 2;
+            if (t >= -0.4142 && t < 0.4142) return dx > 0 ? 6 : 4;
+            if (t >= 2.4142 || t < -2.4142) return dy > 0 ? 8 : 2;
+            if (t >= 0.4142 && t < 2.4142) return dx > 0 ? 9 : 1;
+            return dy > 0 ? 7 : 3;
+        }
+    };
+
+    // Sử dụng event delegation trên document thay vì gắn từng element
+    let startX, startY;
+
+    document.addEventListener('dragstart', (e) => {
+        startX = e.clientX;
+        startY = e.clientY;
+        // Lấy link từ target hoặc Shadow DOM hoặc cha của nó
+        const path = e.composedPath ? e.composedPath() : [];
+        // Tìm thẻ A hoặc IMG trong đường dẫn sự kiện
+        const linkEl = path.find(el => el.tagName === 'A') || e.target.closest('a');
+
+        if (!linkEl) return;
+
+        // Cho phép kéo thả link
+        e.dataTransfer.effectAllowed = 'link';
+
+        const onDragEnd = (ev) => {
+            const endX = ev.clientX;
+            const endY = ev.clientY;
+            const dir = getDirection(startX, startY, endX, endY);
+            const href = linkEl.href || linkEl.src;
+
+            console.log(`Drag: ${dir} on ${href}`);
+
+            switch (dir) {
+                case 6: executeAction(href, CONFIG.actions.RIGHT); break;
+                case 4: executeAction(href, CONFIG.actions.LEFT); break;
+                case 2: executeAction(href, CONFIG.actions.UP); break;
+                case 8: executeAction(href, CONFIG.actions.DOWN); break;
+                case 1: executeAction(href, 'list'); break;
+            }
+            document.removeEventListener('dragend', onDragEnd);
+        };
+
+        document.addEventListener('dragend', onDragEnd);
+    });
+
+    // --- RIGHT CLICK GATHERING ---
+    let rightClickTimer;
+    let isRightClickHeld = false;
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.button !== 2) return; // Chỉ chuột phải
+
+        const link = e.target.closest('a');
+        if (!link) return;
+
+        rightClickTimer = setTimeout(() => {
+            isRightClickHeld = true;
+            if (collectedUrls.has(link)) {
+                collectedUrls.delete(link);
+                link.style.border = '';
+                link.style.boxSizing = '';
+            } else {
+                collectedUrls.add(link);
+                link.style.boxSizing = 'border-box';
+                link.style.border = 'solid yellow 4px';
+            }
+        }, 200);
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (e.button === 2) {
+            clearTimeout(rightClickTimer);
+            // Nếu đã giữ chuột thì chặn menu ngữ cảnh
+            if (isRightClickHeld) {
+                setTimeout(() => { isRightClickHeld = false; }, 10);
+            }
+        }
+    });
+
+    document.addEventListener('contextmenu', (e) => {
+        if (isRightClickHeld) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    });
+
+    // --- YOUTUBE SPECIFIC ---
+    if (location.hostname.includes('youtube.com')) {
+        const isMobile = location.hostname.startsWith('m.');
+        const toggleMobile = (persist) => {
+            const newUrl = new URL(location.href);
+            if (isMobile) {
+                newUrl.hostname = 'www.youtube.com';
+                newUrl.searchParams.set('app', 'desktop');
+            } else {
+                newUrl.hostname = 'm.youtube.com';
+                newUrl.searchParams.set('app', 'm');
+            }
+            newUrl.searchParams.set('persist_app', persist ? '1' : '0');
+            if (persist && isMobile) GM_setValue('hh_mobile', false);
+            if (persist && !isMobile) GM_setValue('hh_mobile', true);
+            location.href = newUrl.href;
+        };
+
+        GM_registerMenuCommand(isMobile ? "Switch to Desktop (Persist)" : "Switch to Mobile (Persist)", () => toggleMobile(true));
+        GM_registerMenuCommand(isMobile ? "Switch to Desktop (Temp)" : "Switch to Mobile (Temp)", () => toggleMobile(false));
+
+        if (isMobile) {
+            GM_addStyle('ytm-rich-item-renderer {width: 33%!important;margin: 1px!important;padding: 0px!important;}');
+        }
+    }
+})();
