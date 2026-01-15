@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Auto Download VTT - Final Alignment
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Căn chỉnh lại độ cao (11px) để khớp hoàn toàn với nút Guest
-// @author       You
+// @author       Nguyễn Ngọc Tuyên
 // @match        *://goplay.ml/*
 // @match        *://goplay.su/*
 // @grant        none
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/VTT-Goplay
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/VTT-Goplay
 // ==/UserScript==
 
 (function() {
