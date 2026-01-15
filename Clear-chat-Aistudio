@@ -1,0 +1,190 @@
+// ==UserScript==
+// @name         Google AI Studio | Clear Chat (Keep First 3 Messages)
+// @namespace    https://greasyfork.org/en/users/1462137-piknockyou
+// @version      2.2
+// @author       Nguyễn Ngọc Tuyên
+// @license      AGPL-3.0
+// @description  Xóa tất cả chat nhưng giữ lại 3 dòng đầu tiên.
+// @match        https://aistudio.google.com/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=aistudio.google.com
+// @grant        GM_addStyle
+// @run-at       document-idle
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Thoát nếu chạy trong iframe
+    if (window.self !== window.top) return;
+
+    console.log('[Gemini Chat Cleaner] Script loaded (Keep First 3 Mode)...');
+
+    //================================================================================
+    // CẤU HÌNH SỐ LƯỢNG TIN NHẮN GIỮ LẠI
+    //================================================================================
+    const MESSAGES_TO_KEEP = 3; // Giữ lại 3 tin nhắn đầu
+
+    //================================================================================
+    // CẤU HÌNH SELECTOR
+    //================================================================================
+    const CHAT_TURN_OPTIONS_SELECTOR = 'ms-chat-turn-options span[class="material-symbols-outlined notranslate ms-button-icon-symbol ng-star-inserted"]';
+    const DELETE_BUTTON_MENU_SELECTOR = 'div.mat-mdc-menu-content > button:first-of-type';
+    const DELETE_BUTTON_TEXT = "delete Delete";
+
+    //================================================================================
+    // STYLES
+    //================================================================================
+    GM_addStyle(`
+        #gemini-cleaner-button {
+            margin: 0 4px;
+            color: #d93025 !important; /* Màu đỏ cho nút xóa */
+        }
+        /* Tooltip styles */
+        .gcc-tooltip {
+            position: fixed; background: #303134; border: 1px solid #5f6368; border-radius: 4px;
+            padding: 6px 10px; font-family: 'Google Sans', Roboto, sans-serif; font-size: 11px;
+            font-weight: 500; color: #e8eaed; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            z-index: 10001; pointer-events: none; opacity: 0; visibility: hidden;
+            transition: opacity 0.1s ease, visibility 0.1s ease; white-space: pre-line;
+            text-align: center; line-height: 1.4; max-width: 250px;
+        }
+        .gcc-tooltip.visible { opacity: 1; visibility: visible; }
+    `);
+
+    //================================================================================
+    // TOOLTIP & HELPER FUNCTIONS
+    //================================================================================
+
+    let gccTooltip = null;
+    let tooltipOwner = null;
+
+    function getTooltip() {
+        if (gccTooltip && document.body.contains(gccTooltip)) return gccTooltip;
+        gccTooltip = document.createElement('div');
+        gccTooltip.className = 'gcc-tooltip';
+        document.body.appendChild(gccTooltip);
+        return gccTooltip;
+    }
+
+    function showTooltip(btn, message) {
+        if (tooltipOwner && tooltipOwner !== btn) hideTooltip(tooltipOwner);
+        const tooltip = getTooltip();
+        tooltip.textContent = message;
+        tooltipOwner = btn;
+
+        const btnRect = btn.getBoundingClientRect();
+        tooltip.style.left = `${btnRect.left}px`;
+        tooltip.style.top = `${btnRect.bottom + 10}px`;
+        tooltip.classList.add('visible');
+    }
+
+    function hideTooltip(owner = null) {
+        if (gccTooltip) gccTooltip.classList.remove('visible');
+        tooltipOwner = null;
+    }
+
+    // --- HÀM CHÍNH: Click các phần tử từ index 3 trở đi ---
+    function clickElementsKeepTopN(selector) {
+        try {
+            const elements = document.querySelectorAll(selector);
+
+            // Kiểm tra xem có đủ tin nhắn để xóa không
+            if (elements.length <= MESSAGES_TO_KEEP) {
+                alert(`Không có đủ tin nhắn để xóa hoặc chỉ còn ${MESSAGES_TO_KEEP} dòng đầu.`);
+                return false;
+            }
+
+            if (!confirm(`Bạn có chắc muốn xóa ${elements.length - MESSAGES_TO_KEEP} tin nhắn và GIỮ LẠI ${MESSAGES_TO_KEEP} dòng đầu tiên?`)) {
+                return false;
+            }
+
+            // Lặp từ MESSAGES_TO_KEEP (3) để bỏ qua 3 dòng đầu (index 0, 1, 2)
+            for (let i = MESSAGES_TO_KEEP; i < elements.length; i++) {
+                elements[i].click();
+            }
+            console.log(`[Gemini Chat Cleaner] Clicked options starting from index ${MESSAGES_TO_KEEP}. Count: ${elements.length - MESSAGES_TO_KEEP}`);
+            return true;
+        } catch (error) {
+            console.error(`Error in clickElementsKeepTopN:`, error);
+            return false;
+        }
+    }
+
+    function clickDeleteButtonsInMenu(selector, text) {
+        // Cần setTimeout nhỏ để chờ menu render ra DOM sau khi click options
+        setTimeout(() => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(element => {
+                if (element.textContent.trim().includes("Delete")) {
+                    element.click();
+                }
+            });
+        }, 100); // Chờ 100ms
+    }
+
+    //================================================================================
+    // TẠO NÚT
+    //================================================================================
+    function createToolbarButton(toolbarRight = document.querySelector('ms-toolbar .toolbar-right')) {
+        if (!toolbarRight || document.getElementById('gemini-cleaner-button')) return;
+
+        const button = document.createElement('button');
+        button.id = 'gemini-cleaner-button';
+        button.setAttribute('ms-button', '');
+        button.setAttribute('variant', 'icon-borderless');
+        button.className = 'mat-mdc-tooltip-trigger ms-button-borderless ms-button-icon ng-star-inserted';
+        button.setAttribute('aria-label', `Clear Chat (Keep ${MESSAGES_TO_KEEP})`);
+
+        button.onclick = main; // Gán hàm xử lý
+
+        button.addEventListener('mouseenter', () => showTooltip(button, `Xóa chat (Giữ ${MESSAGES_TO_KEEP} dòng đầu)`));
+        button.addEventListener('mouseleave', () => hideTooltip(button));
+
+        // Icon thùng rác
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'material-symbols-outlined notranslate ms-button-icon-symbol ng-star-inserted';
+        iconSpan.textContent = 'delete';
+
+        button.appendChild(iconSpan);
+
+        const moreButton = toolbarRight.querySelector('button[iconname="more_vert"]');
+        if (moreButton) {
+            toolbarRight.insertBefore(button, moreButton);
+        } else {
+            toolbarRight.appendChild(button);
+        }
+    }
+
+    //================================================================================
+    // LOGIC CHÍNH
+    //================================================================================
+    function main() {
+        console.log('[Gemini Chat Cleaner] Main function triggered');
+
+        // 1. Mở menu của tất cả tin nhắn TRỪ 3 tin nhắn đầu tiên
+        const proceed = clickElementsKeepTopN(CHAT_TURN_OPTIONS_SELECTOR);
+
+        // 2. Nếu người dùng đồng ý và đã mở menu, tiến hành xóa
+        if (proceed) {
+            clickDeleteButtonsInMenu(DELETE_BUTTON_MENU_SELECTOR, DELETE_BUTTON_TEXT);
+        }
+    }
+
+    // --- Observer để chèn nút ---
+    const observer = new MutationObserver(() => {
+        if (document.getElementById('gemini-cleaner-button')) return;
+        const toolbarRight = document.querySelector('ms-toolbar .toolbar-right');
+        if (toolbarRight) {
+            createToolbarButton(toolbarRight);
+        }
+    });
+
+    // Khởi chạy
+    observer.observe(document.body, { childList: true, subtree: true });
+    // Thử chèn ngay lập tức nếu đã load sẵn
+    const initialToolbar = document.querySelector('ms-toolbar .toolbar-right');
+    if (initialToolbar) createToolbarButton(initialToolbar);
+
+})();
