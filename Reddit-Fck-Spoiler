@@ -1,0 +1,72 @@
+// ==UserScript==
+// @name         Reddit Auto-Reveal Spoilers
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  Tự động hiện tất cả spoiler trên mọi giao diện Reddit mà không cần click
+// @author       Nguyễn Ngọc Tuyên
+// @match        https://www.reddit.com/*
+// @grant        none
+// @run-at       document-start
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // 1. Tiêm CSS để xử lý các thẻ spoiler dạng cũ (Markdown)
+    const style = document.createElement('style');
+    style.innerHTML = `
+        /* Hiện văn bản ẩn của giao diện cũ/mobile web */
+        .md-spoiler-text, 
+        [data-testid="spoiler-text"],
+        span[class*="spoiler"] {
+            background-color: rgba(255, 255, 0, 0.1) !important; /* Nền vàng nhạt để dễ nhận biết */
+            color: inherit !important;
+            cursor: auto !important;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // 2. Hàm xử lý các thẻ Shreddit-Spoiler (Giao diện mới nhất)
+    const revealAll = () => {
+        // Tìm tất cả các thẻ spoiler của Reddit mới
+        const shredditSpoilers = document.querySelectorAll('shreddit-spoiler');
+        
+        shredditSpoilers.forEach(el => {
+            // Nếu chưa được hiển thị
+            if (!el.hasAttribute('revealed') || el.getAttribute('revealed') === 'false') {
+                
+                // CÁCH 1: Ép thuộc tính 'revealed'
+                el.setAttribute('revealed', '');
+                
+                // CÁCH 2: Kích hoạt thuộc tính qua JS property
+                el.revealed = true;
+
+                // CÁCH 3: Tìm nút bấm ẩn bên trong Shadow DOM và kích hoạt nó
+                if (el.shadowRoot) {
+                    const btn = el.shadowRoot.querySelector('button') || el.shadowRoot.querySelector('.spoiler-button');
+                    if (btn) btn.click();
+                }
+            }
+        });
+    };
+
+    // Theo dõi liên tục để xử lý comment mới khi cuộn trang
+    const observer = new MutationObserver(() => {
+        revealAll();
+    });
+
+    // Chạy khi trang đã sẵn sàng
+    window.addEventListener('load', () => {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        revealAll();
+    });
+
+    // Chạy dự phòng mỗi 1 giây để đảm bảo không sót
+    setInterval(revealAll, 1000);
+
+})();
