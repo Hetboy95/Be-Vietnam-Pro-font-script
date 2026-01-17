@@ -1,11 +1,13 @@
 // ==UserScript==
-// @name         YouTube Translate Button (Text: Dịch comment)
+// @name         YouTube Translate Button V14 (Fix Spacing)
 // @namespace    http://tampermonkey.net/
-// @version      13.2
-// @description  Tự động dịch bình luận (Shorts & Video). Nút hiển thị "Dịch comment".
+// @version      14.0
+// @description  Tự động dịch bình luận. Chỉnh sửa khoảng cách nút cho Video ngang và Shorts.
 // @author       Nguyễn Ngọc Tuyên
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
+// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
+// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
 // @grant        none
 // ==/UserScript==
 
@@ -19,17 +21,17 @@
     const ORIGINAL_TEXTS = ["xem bản gốc", "xem văn bản gốc", "see original", "see translation", "nguyên văn", "bản dịch tự động"];
 
     const ID_BTN_PREFIX = "yt-trans-btn-"; 
-    const BUTTON_LABEL = "Dịch comment"; // Nội dung nút hiển thị
+    const BUTTON_LABEL = "Dịch comment"; 
 
     let isAutoTranslating = false;
 
-    // --- STYLE NÚT ---
+    // --- STYLE NÚT CHUNG ---
     const btnStyle = {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         height: "32px",
-        padding: "0 14px", // Tăng padding một chút cho chữ dài hơn
+        padding: "0 14px",
         backgroundColor: "transparent",
         color: "#0f0f0f",
         border: "1px solid #ccc",
@@ -39,7 +41,6 @@
         fontSize: "13px",
         fontFamily: "Roboto, Arial, sans-serif",
         whiteSpace: "nowrap",
-        marginRight: "8px",
         zIndex: "9999"
     };
 
@@ -47,11 +48,25 @@
     function createButton(uniqueId) {
         const btn = document.createElement("button");
         btn.id = uniqueId;
-        btn.textContent = BUTTON_LABEL; // Sử dụng nhãn "Dịch comment"
+        btn.textContent = BUTTON_LABEL; 
         btn.title = "Bật/Tắt tự động dịch Comment";
         
         Object.assign(btn.style, btnStyle);
 
+        // --- XỬ LÝ KHOẢNG CÁCH RIÊNG CHO TỪNG VỊ TRÍ ---
+        if (uniqueId.includes("normal")) {
+            // Video thường: Cần cách nút "Sắp xếp" bên trái ra
+            btn.style.marginLeft = "15px"; 
+            btn.style.marginRight = "5px"; // Cách nút bên phải (nếu có nút Download)
+        } else if (uniqueId.includes("shorts")) {
+            // Shorts: Cần cách nút "Đóng/Menu" bên phải ra
+            btn.style.marginRight = "8px"; 
+        } else if (uniqueId.includes("masthead")) {
+            // Logo: Cách logo ra
+            btn.style.marginLeft = "20px";
+        }
+
+        // Dark mode check
         if (document.querySelector("html[dark]")) {
             btn.style.color = "#fff";
             btn.style.borderColor = "#666";
@@ -78,7 +93,7 @@
                 btn.style.color = "#065fd4";
                 btn.style.backgroundColor = isDark ? "rgba(6, 95, 212, 0.2)" : "rgba(6, 95, 212, 0.1)";
             } else {
-                btn.textContent = BUTTON_LABEL; // Trả về "Dịch comment" khi tắt
+                btn.textContent = BUTTON_LABEL; 
                 btn.style.borderColor = isDark ? "#666" : "#ccc";
                 btn.style.color = isDark ? "#fff" : "#0f0f0f";
                 btn.style.backgroundColor = "transparent";
@@ -143,11 +158,12 @@
             }
         });
         
-        // 2. Video thường
+        // 2. Video thường (Đã fix khoảng cách)
         if (window.location.href.includes("/watch") && !window.location.href.includes("/shorts")) {
              const sortMenu = document.querySelector("ytd-comments-header-renderer #sort-menu");
              if (sortMenu && sortMenu.parentNode && !document.getElementById(`${ID_BTN_PREFIX}normal`)) {
                  const btn = createButton(`${ID_BTN_PREFIX}normal`);
+                 // Chèn vào sau menu Sắp xếp
                  sortMenu.parentNode.insertBefore(btn, sortMenu.nextSibling);
                  updateVisuals();
              }
@@ -158,7 +174,6 @@
         const mastheadBtnId = `${ID_BTN_PREFIX}masthead`;
         if (masthead && !document.getElementById(mastheadBtnId)) {
              const btn = createButton(mastheadBtnId);
-             btn.style.marginLeft = "20px";
              masthead.appendChild(btn);
         }
         
