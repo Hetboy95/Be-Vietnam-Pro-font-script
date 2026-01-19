@@ -1,18 +1,22 @@
 // ==UserScript==
-// @name        Be Vietnam Pro (All site)
+// @name        Be Vietnam Pro (All site) - Exclude MS & Google
 // @namespace   http://tampermonkey.net/
-// @version     3.2
-// @description Dùng font Be Vietnam Pro Variable đã cài trong máy cho mọi trang (Trừ Google Fonts)
+// @version     4.1
+// @description Dùng font Be Vietnam Pro cho mọi trang, loại trừ Microsoft và Google Fonts để tránh lỗi icon
 // @author      Nguyễn Ngọc Tuyên
 // @match       *://*/*
 // @exclude     *://fonts.google.com/*
+// @exclude     *://*.microsoft.com/*
+// @exclude     *://*.microsoftonline.com/*
+// @exclude     *://*.office.com/*
+// @exclude     *://*.visualstudio.com/*
 // @run-at      document-start
 // @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
 // @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
 // ==/UserScript==
 
 (function() {
-    // 1. Link tải font dự phòng (nếu máy chưa cài)
+    // 1. Link tải font dự phòng
     const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');";
 
     var css = [
@@ -24,29 +28,22 @@
         "    -webkit-font-smoothing: antialiased;",
         "}",
         "",
-        "/* 3. QUY TẮC LOẠI TRỪ THÔNG MINH (Quan trọng) */",
-        "/* Không đổi font nếu class của thẻ đó chứa các từ khóa icon */",
-        "/* Đã thêm 'tgico' (Telegram), 'ico', 'svg' vào danh sách loại trừ */",
+        "/* 3. QUY TẮC LOẠI TRỪ ICON */",
         "div:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
         "span:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
         "button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']) {",
         "    font-family: 'Be Vietnam Pro', sans-serif !important;",
         "}",
         "",
-        "/* 4. BẢO VỆ CỤ THỂ CHO CÁC SITE */",
-        "",
-        "/* Google Icons */",
-        ".material-icons, .material-icons-outlined, .material-symbols-outlined, .material-symbols-rounded, .google-symbols, .mat-icon {",
+        "/* 4. KHÔI PHỤC CHO CÁC SITE CÒN LẠI */",
+        ".material-icons, .material-icons-outlined, .material-symbols-outlined, .google-symbols, .mat-icon {",
         "    font-family: 'Material Symbols Outlined', 'Material Icons', 'Google Symbols' !important;",
         "    font-weight: normal !important;",
         "    font-style: normal !important;",
         "}",
         "",
-        "/* Telegram Icons (Các class bắt đầu bằng tgico hoặc ico) */",
         "[class*='tgico'], [class*='ico-'], .ico {",
-        "    /* Trả lại font icon gốc của Telegram */",
         "    font-family: 'icomoon', 'Telegram Icons', monospace !important;",
-        "    /* Đảm bảo không bị in đậm làm vỡ hình icon */",
         "    font-weight: normal !important;",
         "    font-style: normal !important;",
         "}"
@@ -54,10 +51,6 @@
 
     if (typeof GM_addStyle != 'undefined') {
         GM_addStyle(css);
-    } else if (typeof PRO_addStyle != 'undefined') {
-        PRO_addStyle(css);
-    } else if (typeof addStyle != 'undefined') {
-        addStyle(css);
     } else {
         var node = document.createElement('style');
         node.type = 'text/css';
