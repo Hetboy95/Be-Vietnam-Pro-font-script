@@ -17,102 +17,50 @@
 // ==/UserScript==
 
 (function() {
-    'use strict';
-    
-    const currentDomain = window.location.hostname;
-    
     // 1. Link tải font dự phòng
     const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');";
 
-    // 2. Tạo CSS với quy tắc khác nhau cho Youku và các site khác
-    let css = fontImport + "\n\n";
-    
-    if (currentDomain.includes('youku.com')) {
-        // CSS đặc biệt cho Youku - ít xâm lấn hơn
-        css += `
-            /* QUY TẮC CHO YOUKU - Chỉ áp dụng cho văn bản chính */
-            body, p, h1, h2, h3, h4, h5, h6, 
-            div:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='ico']):not([class*='Ico']),
-            span:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='ico']):not([class*='Ico']),
-            a:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='ico']):not([class*='Ico']),
-            button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='ico']):not([class*='Ico']) {
-                font-family: 'Be Vietnam Pro', sans-serif !important;
-                -webkit-font-smoothing: antialiased;
-            }
-            
-            /* Loại trừ đặc biệt cho Youku icon classes */
-            .y-icon, [class*='yicon'], [class*='youku-icon'],
-            .icon, .Icon, [class*='-icon'], [class*='-Icon'],
-            .symbol, [class*='symbol'], 
-            .material-icons, .material-icons-outlined,
-            i[class*='icon'], i[class*='Icon'],
-            svg, [class*='svg'], [class*='Svg'] {
-                font-family: inherit !important;
-            }
-            
-            /* Khôi phục font icon mặc định cho Youku */
-            .iconfont {
-                font-family: "iconfont" !important;
-            }
-        `;
-    } else {
-        // CSS cho các site khác (giữ nguyên logic cũ nhưng cải thiện)
-        css += `
-            /* Áp dụng font cho các thẻ văn bản chính */
-            body, h1, h2, h3, h4, h5, h6, p, blockquote, pre, 
-            a, b, u, strong, em, input, select, textarea, 
-            fieldset, legend, label, li, td, th {
-                font-family: 'Be Vietnam Pro', sans-serif !important;
-                -webkit-font-smoothing: antialiased;
-            }
-            
-            /* QUY TẮC LOẠI TRỪ ICON NÂNG CAO */
-            div:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']):not([class*='Ico']):not([class*='Svg']),
-            span:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']):not([class*='Ico']):not([class*='Svg']),
-            button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']):not([class*='Ico']):not([class*='Svg']) {
-                font-family: 'Be Vietnam Pro', sans-serif !important;
-            }
-            
-            /* KHÔI PHỤC FONT CHO CÁC ICON PHỔ BIẾN */
-            .material-icons, .material-icons-outlined, .material-symbols-outlined, 
-            .google-symbols, .mat-icon, .fa, .fas, .far, .fab, [class*='fa-'],
-            [class*='tgico'], [class*='ico-'], .ico, .icon, .Icon, [class*='-icon'],
-            [class*='symbol'], svg, [class*='svg'] {
-                font-family: inherit !important;
-            }
-        `;
-    }
+    var css = [
+        fontImport,
+        "",
+        "/* 2. Áp dụng font cho các thẻ văn bản chính */",
+        "body, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, b, u, strong, em, input, select, textarea, fieldset, legend, label {",
+        "    font-family: 'Be Vietnam Pro', sans-serif !important;",
+        "    -webkit-font-smoothing: antialiased;",
+        "}",
+        "",
+        "/* 3. QUY TẮC LOẠI TRỪ ICON */",
+        "div:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
+        "span:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
+        "button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']) {",
+        "    font-family: 'Be Vietnam Pro', sans-serif !important;",
+        "}",
+        "",
+        "/* 4. KHÔI PHỤC CHO CÁC SITE CÒN LẠI */",
+        ".material-icons, .material-icons-outlined, .material-symbols-outlined, .google-symbols, .mat-icon {",
+        "    font-family: 'Material Symbols Outlined', 'Material Icons', 'Google Symbols' !important;",
+        "    font-weight: normal !important;",
+        "    font-style: normal !important;",
+        "}",
+        "",
+        "[class*='tgico'], [class*='ico-'], .ico {",
+        "    font-family: 'icomoon', 'Telegram Icons', monospace !important;",
+        "    font-weight: normal !important;",
+        "    font-style: normal !important;",
+        "}"
+    ].join("\n");
 
-    // 3. Thêm CSS vào trang
-    if (typeof GM_addStyle !== 'undefined') {
+    if (typeof GM_addStyle != 'undefined') {
         GM_addStyle(css);
     } else {
-        const style = document.createElement('style');
-        style.type = 'text/css';
-        style.textContent = css;
-        document.head.appendChild(style);
-    }
-    
-    // 4. Hàm sửa lỗi động cho Youku (nếu cần)
-    if (currentDomain.includes('youku.com')) {
-        setTimeout(() => {
-            const styleFix = document.createElement('style');
-            styleFix.textContent = `
-                /* Sửa lỗi động cho Youku */
-                [class*="ykl-icon"], 
-                [class*="yk-icon"],
-                .vjs-control,
-                .control-icon {
-                    font-family: inherit !important;
-                }
-                
-                /* Đảm bảo các nút điều khiển video không bị ảnh hưởng */
-                .video-player [class*="icon"],
-                .player-wrapper [class*="icon"] {
-                    font-family: inherit !important;
-                }
-            `;
-            document.head.appendChild(styleFix);
-        }, 1000);
+        var node = document.createElement('style');
+        node.type = 'text/css';
+        node.appendChild(document.createTextNode(css));
+        var heads = document.getElementsByTagName('head');
+        if (heads.length > 0) {
+            heads[0].appendChild(node);
+        } else {
+            document.documentElement.appendChild(node);
+        }
     }
 })();
