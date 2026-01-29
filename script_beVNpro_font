@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        Be Vietnam Pro (All site) - Fixed for Youku
 // @namespace   http://tampermonkey.net/
-// @version     4.3
+// @version     4.2
 // @description Dùng font Be Vietnam Pro cho mọi trang, loại trừ Microsoft và Google Fonts để tránh lỗi icon - Bản sửa lỗi Youku
 // @author      Nguyễn Ngọc Tuyên
 // @match       *://*/*
@@ -10,6 +10,7 @@
 // @exclude     *://*.microsoftonline.com/*
 // @exclude     *://*.office.com/*
 // @exclude     *://*.visualstudio.com/*
+// @exclude     *://*.youku.com/*
 // @run-at      document-start
 // @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
 // @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
