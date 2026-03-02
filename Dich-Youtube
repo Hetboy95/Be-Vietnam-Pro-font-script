@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         YouTube Translate Button V14 (Fix Spacing)
+// @name         YouTube Translate Button V15 (Optimized)
 // @namespace    http://tampermonkey.net/
-// @version      14.0
-// @description  Tự động dịch bình luận. Chỉnh sửa khoảng cách nút cho Video ngang và Shorts.
+// @version      15.0
+// @description  Tự động dịch bình luận. Tối ưu: dừng dịch tức thì, tự động dừng khi về trang chủ.
 // @author       Nguyễn Ngọc Tuyên
 // @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
-// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
-// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
+// @downloadURL  https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
+// @updateURL    https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Dich-Youtube
 // @grant        none
 // ==/UserScript==
 
@@ -16,14 +16,17 @@
 
     // --- CẤU HÌNH ---
     const COMMENT_HEADER_KEYWORDS = ["Bình luận", "Comments", "bình luận", "comments", "Tiêu đề", "Transcript"];
-    
     const TRANSLATE_TEXTS = ["dịch sang tiếng việt", "translate to vietnamese", "베트남어로 번역"];
     const ORIGINAL_TEXTS = ["xem bản gốc", "xem văn bản gốc", "see original", "see translation", "nguyên văn", "bản dịch tự động"];
 
-    const ID_BTN_PREFIX = "yt-trans-btn-"; 
-    const BUTTON_LABEL = "Dịch comment"; 
+    const ID_BTN_PREFIX = "yt-trans-btn-";
+    const BUTTON_LABEL = "Dịch comment";
 
     let isAutoTranslating = false;
+
+    // Bộ đếm thế hệ: mỗi lần toggle sẽ tăng lên,
+    // giúp abort mọi thao tác click cũ ngay lập tức
+    let translateGeneration = 0;
 
     // --- STYLE NÚT CHUNG ---
     const btnStyle = {
@@ -44,29 +47,36 @@
         zIndex: "9999"
     };
 
+    // --- KIỂM TRA TRANG CHỦ ---
+    function isHomePage() {
+        const path = window.location.pathname;
+        return path === "/" || path === "";
+    }
+
+    // --- KIỂM TRA TRANG XEM VIDEO ---
+    function isVideoPage() {
+        const href = window.location.href;
+        return href.includes("/watch") || href.includes("/shorts");
+    }
+
     // --- HÀM TẠO NÚT ---
     function createButton(uniqueId) {
         const btn = document.createElement("button");
         btn.id = uniqueId;
-        btn.textContent = BUTTON_LABEL; 
+        btn.textContent = BUTTON_LABEL;
         btn.title = "Bật/Tắt tự động dịch Comment";
-        
+
         Object.assign(btn.style, btnStyle);
 
-        // --- XỬ LÝ KHOẢNG CÁCH RIÊNG CHO TỪNG VỊ TRÍ ---
         if (uniqueId.includes("normal")) {
-            // Video thường: Cần cách nút "Sắp xếp" bên trái ra
-            btn.style.marginLeft = "15px"; 
-            btn.style.marginRight = "5px"; // Cách nút bên phải (nếu có nút Download)
+            btn.style.marginLeft = "15px";
+            btn.style.marginRight = "5px";
         } else if (uniqueId.includes("shorts")) {
-            // Shorts: Cần cách nút "Đóng/Menu" bên phải ra
-            btn.style.marginRight = "8px"; 
+            btn.style.marginRight = "8px";
         } else if (uniqueId.includes("masthead")) {
-            // Logo: Cách logo ra
             btn.style.marginLeft = "20px";
         }
 
-        // Dark mode check
         if (document.querySelector("html[dark]")) {
             btn.style.color = "#fff";
             btn.style.borderColor = "#666";
@@ -81,7 +91,7 @@
         return btn;
     }
 
-    // --- CẬP NHẬT GIAO DIỆN ---
+    // --- CẬP NHẬT GIAO DIỆN NÚT ---
     function updateVisuals() {
         const buttons = document.querySelectorAll(`button[id^="${ID_BTN_PREFIX}"]`);
         const isDark = document.querySelector("html[dark]");
@@ -93,7 +103,7 @@
                 btn.style.color = "#065fd4";
                 btn.style.backgroundColor = isDark ? "rgba(6, 95, 212, 0.2)" : "rgba(6, 95, 212, 0.1)";
             } else {
-                btn.textContent = BUTTON_LABEL; 
+                btn.textContent = BUTTON_LABEL;
                 btn.style.borderColor = isDark ? "#666" : "#ccc";
                 btn.style.color = isDark ? "#fff" : "#0f0f0f";
                 btn.style.backgroundColor = "transparent";
@@ -101,18 +111,23 @@
         });
     }
 
-    // --- LOGIC CLICK ---
-    function clickAllButtons(keywords) {
-        const keywordConditions = keywords.map(k => `contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${k}')`).join(' or ');
+    // --- LOGIC CLICK (có kiểm tra generation để abort ngay) ---
+    function clickAllButtons(keywords, gen) {
+        const keywordConditions = keywords.map(k =>
+            `contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '${k}')`
+        ).join(' or ');
         const xpath = `//*[${keywordConditions}]`;
         const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
 
         for (let i = 0; i < result.snapshotLength; i++) {
-            let element = result.snapshotItem(i);
+            // Kiểm tra generation: nếu đã thay đổi → dừng ngay, không click thêm
+            if (gen !== translateGeneration) return;
+
+            const element = result.snapshotItem(i);
             if (element.offsetParent === null) continue;
-            
+
             element.click();
-            
+
             let parent = element.parentElement;
             let attempts = 0;
             while (parent && attempts < 2) {
@@ -126,19 +141,38 @@
         }
     }
 
+    // --- TOGGLE DỊCH ---
     function toggleTranslationMode() {
+        // Tăng generation TRƯỚC để abort mọi thao tác click đang chạy
+        translateGeneration++;
+        const gen = translateGeneration;
+
         isAutoTranslating = !isAutoTranslating;
         updateVisuals();
-        if (isAutoTranslating) clickAllButtons(TRANSLATE_TEXTS);
-        else clickAllButtons(ORIGINAL_TEXTS);
+
+        if (isAutoTranslating) {
+            clickAllButtons(TRANSLATE_TEXTS, gen);
+        } else {
+            clickAllButtons(ORIGINAL_TEXTS, gen);
+        }
     }
 
-    // --- SCANNER ---
+    // --- DỪNG DỊCH (dùng khi chuyển trang về home) ---
+    function stopTranslation() {
+        if (!isAutoTranslating) return;
+        translateGeneration++;
+        const gen = translateGeneration;
+        isAutoTranslating = false;
+        updateVisuals();
+        clickAllButtons(ORIGINAL_TEXTS, gen);
+    }
+
+    // --- SCANNER: chèn nút vào DOM ---
     function scanAndInject() {
         // 1. Shorts
         const headers = document.querySelectorAll('ytd-engagement-panel-title-header-renderer');
         headers.forEach((header, index) => {
-            if (header.offsetParent === null) return; 
+            if (header.offsetParent === null) return;
 
             const headerText = header.innerText || "";
             const isCommentSection = COMMENT_HEADER_KEYWORDS.some(kw => headerText.includes(kw));
@@ -157,39 +191,77 @@
                 }
             }
         });
-        
-        // 2. Video thường (Đã fix khoảng cách)
+
+        // 2. Video thường
         if (window.location.href.includes("/watch") && !window.location.href.includes("/shorts")) {
-             const sortMenu = document.querySelector("ytd-comments-header-renderer #sort-menu");
-             if (sortMenu && sortMenu.parentNode && !document.getElementById(`${ID_BTN_PREFIX}normal`)) {
-                 const btn = createButton(`${ID_BTN_PREFIX}normal`);
-                 // Chèn vào sau menu Sắp xếp
-                 sortMenu.parentNode.insertBefore(btn, sortMenu.nextSibling);
-                 updateVisuals();
-             }
+            const sortMenu = document.querySelector("ytd-comments-header-renderer #sort-menu");
+            if (sortMenu && sortMenu.parentNode && !document.getElementById(`${ID_BTN_PREFIX}normal`)) {
+                const btn = createButton(`${ID_BTN_PREFIX}normal`);
+                sortMenu.parentNode.insertBefore(btn, sortMenu.nextSibling);
+                updateVisuals();
+            }
         }
-        
+
         // 3. Masthead
         const masthead = document.querySelector("ytd-masthead #start");
         const mastheadBtnId = `${ID_BTN_PREFIX}masthead`;
         if (masthead && !document.getElementById(mastheadBtnId)) {
-             const btn = createButton(mastheadBtnId);
-             masthead.appendChild(btn);
+            const btn = createButton(mastheadBtnId);
+            masthead.appendChild(btn);
         }
-        
+
         const mastheadBtn = document.getElementById(mastheadBtnId);
         if (mastheadBtn) {
-            const isViewing = window.location.href.includes("/watch") || window.location.href.includes("/shorts");
-            mastheadBtn.style.display = isViewing ? "inline-flex" : "none";
+            mastheadBtn.style.display = isVideoPage() ? "inline-flex" : "none";
         }
     }
 
-    // --- LOOP ---
+    // ============================================================
+    //  TÍNH NĂNG MỚI 1: Tự động dừng dịch khi về trang chủ
+    // ============================================================
+    // YouTube phát sự kiện 'yt-navigate-finish' khi chuyển trang nội bộ (SPA)
+    document.addEventListener('yt-navigate-finish', function() {
+        if (isHomePage()) {
+            stopTranslation();
+        }
+    });
+
+    // Backup: theo dõi popstate cho trường hợp nút Back/Forward
+    window.addEventListener('popstate', function() {
+        setTimeout(() => {
+            if (isHomePage()) {
+                stopTranslation();
+            }
+        }, 100);
+    });
+
+    // ============================================================
+    //  TÍNH NĂNG MỚI 2: MutationObserver – dịch comment mới ngay lập tức
+    // ============================================================
+    let observerTimeout = null;
+    const commentObserver = new MutationObserver(() => {
+        if (!isAutoTranslating) return;
+
+        // Debounce 200ms: gom nhiều mutation lại, chỉ xử lý 1 lần
+        if (observerTimeout) clearTimeout(observerTimeout);
+        observerTimeout = setTimeout(() => {
+            if (isAutoTranslating) {
+                clickAllButtons(TRANSLATE_TEXTS, translateGeneration);
+            }
+        }, 200);
+    });
+
+    commentObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // ============================================================
+    //  VÒNG LẶP CHÍNH: chỉ inject nút, KHÔNG gọi clickAllButtons
+    // ============================================================
     setInterval(() => {
         scanAndInject();
-        if (isAutoTranslating) {
-            clickAllButtons(TRANSLATE_TEXTS);
-        }
-    }, 1000);
+    }, 800);
 
 })();
+
