@@ -1,72 +1,154 @@
 // ==UserScript==
 // @name         Reddit Auto-Reveal Spoilers
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      4.1
 // @description  Tự động hiện tất cả spoiler trên mọi giao diện Reddit mà không cần click
 // @author       Nguyễn Ngọc Tuyên
 // @match        https://www.reddit.com/*
+// @match        https://sh.reddit.com/*
+// @match        https://new.reddit.com/*
 // @grant        none
-// @run-at       document-start
-// @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
-// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
+// @run-at       document-idle
+// @downloadURL  https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
+// @updateURL    https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
-    // 1. Tiêm CSS để xử lý các thẻ spoiler dạng cũ (Markdown)
+    // ============================================================
+    // 1. CSS: Chỉ xử lý spoiler kiểu Markdown cũ (Old Reddit)
+    //    KHÔNG can thiệp CSS vào shreddit-spoiler (Shadow DOM)
+    // ============================================================
     const style = document.createElement('style');
-    style.innerHTML = `
-        /* Hiện văn bản ẩn của giao diện cũ/mobile web */
-        .md-spoiler-text, 
+    style.textContent = `
+        /* === Giao diện cũ (Old Reddit / Markdown) === */
+        .md-spoiler-text,
+        .md-spoiler-text:hover,
+        .md-spoiler-text:active {
+            background-color: transparent !important;
+            color: inherit !important;
+            cursor: auto !important;
+        }
+
         [data-testid="spoiler-text"],
         span[class*="spoiler"] {
-            background-color: rgba(255, 255, 0, 0.1) !important; /* Nền vàng nhạt để dễ nhận biết */
+            background-color: transparent !important;
             color: inherit !important;
             cursor: auto !important;
         }
     `;
     document.head.appendChild(style);
 
-    // 2. Hàm xử lý các thẻ Shreddit-Spoiler (Giao diện mới nhất)
-    const revealAll = () => {
-        // Tìm tất cả các thẻ spoiler của Reddit mới
-        const shredditSpoilers = document.querySelectorAll('shreddit-spoiler');
-        
-        shredditSpoilers.forEach(el => {
-            // Nếu chưa được hiển thị
-            if (!el.hasAttribute('revealed') || el.getAttribute('revealed') === 'false') {
-                
-                // CÁCH 1: Ép thuộc tính 'revealed'
-                el.setAttribute('revealed', '');
-                
-                // CÁCH 2: Kích hoạt thuộc tính qua JS property
-                el.revealed = true;
+    // ============================================================
+    // 2. JavaScript: Reveal spoiler bằng nhiều phương pháp
+    // ============================================================
 
-                // CÁCH 3: Tìm nút bấm ẩn bên trong Shadow DOM và kích hoạt nó
-                if (el.shadowRoot) {
-                    const btn = el.shadowRoot.querySelector('button') || el.shadowRoot.querySelector('.spoiler-button');
+    /**
+     * Reveal <shreddit-spoiler> elements
+     */
+    function revealShredditSpoilers() {
+        const spoilers = document.querySelectorAll('shreddit-spoiler');
+        spoilers.forEach(el => {
+            // Bỏ qua nếu đã revealed
+            if (el.hasAttribute('revealed') && el.getAttribute('revealed') !== 'false') return;
+
+            // Phương pháp 1: Gọi .click() trực tiếp trên element
+            // Web component thường lắng nghe click event
+            try {
+                el.click();
+            } catch (e) { }
+
+            // Phương pháp 2: Nếu click() không hoạt động, thử tìm button trong Shadow DOM
+            if (el.shadowRoot) {
+                try {
+                    const btn = el.shadowRoot.querySelector('button, [role="button"]');
                     if (btn) btn.click();
-                }
+                } catch (e) { }
             }
         });
-    };
+    }
 
-    // Theo dõi liên tục để xử lý comment mới khi cuộn trang
-    const observer = new MutationObserver(() => {
-        revealAll();
-    });
+    /**
+     * Reveal <shreddit-blurred-container reason="spoiler">
+     */
+    function revealBlurredContainers() {
+        const containers = document.querySelectorAll('shreddit-blurred-container[reason="spoiler"]');
+        containers.forEach(el => {
+            if (el.getAttribute('blurred') === 'false') return;
 
-    // Chạy khi trang đã sẵn sàng
-    window.addEventListener('load', () => {
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
+            try { el.click(); } catch (e) { }
+
+            if (el.shadowRoot) {
+                try {
+                    const btn = el.shadowRoot.querySelector('button, [role="button"]');
+                    if (btn) btn.click();
+                } catch (e) { }
+            }
         });
-        revealAll();
+    }
+
+    /**
+     * Reveal spoiler kiểu Markdown cũ
+     */
+    function revealMarkdownSpoilers() {
+        document.querySelectorAll('.md-spoiler-text').forEach(el => {
+            if (!el.classList.contains('md-spoiler-text--revealed')) {
+                el.click();
+            }
+        });
+    }
+
+    /**
+     * Master function
+     */
+    function revealAll() {
+        revealShredditSpoilers();
+        revealBlurredContainers();
+        revealMarkdownSpoilers();
+    }
+
+    // ============================================================
+    // 3. MutationObserver: Theo dõi DOM thay đổi
+    // ============================================================
+    let debounceTimer = null;
+    function debouncedReveal() {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(revealAll, 300);
+    }
+
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                debouncedReveal();
+                break;
+            }
+        }
     });
 
-    // Chạy dự phòng mỗi 1 giây để đảm bảo không sót
-    setInterval(revealAll, 1000);
+    // ============================================================
+    // 4. Khởi động
+    // ============================================================
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    // Chạy lần đầu - delay để đảm bảo web components đã render
+    setTimeout(revealAll, 1500);
+
+    // SPA navigation hooks
+    const origPushState = history.pushState;
+    history.pushState = function () {
+        origPushState.apply(this, arguments);
+        setTimeout(revealAll, 1500);
+    };
+    const origReplaceState = history.replaceState;
+    history.replaceState = function () {
+        origReplaceState.apply(this, arguments);
+        setTimeout(revealAll, 1500);
+    };
+    window.addEventListener('popstate', () => setTimeout(revealAll, 1500));
+
+    // Backup interval mỗi 2 giây
+    setInterval(revealAll, 2000);
 
 })();
