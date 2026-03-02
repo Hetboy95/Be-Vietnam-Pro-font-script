@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name        Be Vietnam Pro (All site) - Fixed for Youku
+// @name        Be Vietnam Pro (All site) - Full CSP Bypass
 // @namespace   http://tampermonkey.net/
-// @version     4.3
-// @description Dùng font Be Vietnam Pro cho mọi trang, loại trừ Microsoft và Google Fonts để tránh lỗi icon - Bản sửa lỗi Youku
+// @version     5.0
+// @description Dùng font Be Vietnam Pro cho mọi trang - Bypass CSP hoàn toàn
 // @author      Nguyễn Ngọc Tuyên
 // @match       *://*/*
 // @exclude     *://fonts.google.com/*
@@ -12,56 +12,156 @@
 // @exclude     *://*.visualstudio.com/*
 // @exclude     *://*.youku.com/*
 // @exclude     *://aistudio.google.com/*
+// @exclude     *://voz.vn/*
+// @grant       GM_addStyle
+// @grant       GM_xmlhttpRequest
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @connect     fonts.googleapis.com
+// @connect     fonts.gstatic.com
 // @run-at      document-start
 // @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
-// @updateURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
+// @updateURL   https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
 // ==/UserScript==
 
 (function() {
-    // 1. Link tải font dự phòng
-    const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');";
+    'use strict';
 
-    var css = [
-        fontImport,
-        "",
-        "/* 2. Áp dụng font cho các thẻ văn bản chính */",
-        "body, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, b, u, strong, em, input, select, textarea, fieldset, legend, label {",
-        "    font-family: 'Be Vietnam Pro', sans-serif !important;",
-        "    -webkit-font-smoothing: antialiased;",
-        "}",
-        "",
-        "/* 3. QUY TẮC LOẠI TRỪ ICON */",
+    var FONT_CSS_URL = 'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap';
+    var CACHE_KEY = 'bvp_datauri_v1';
+    var CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+
+    var WEIGHT_NAMES = {
+        '100':'Thin','200':'ExtraLight','300':'Light','400':'',
+        '500':'Medium','600':'SemiBold','700':'Bold','800':'ExtraBold','900':'Black'
+    };
+
+    // --- Tiện ích ---
+    function getLocalName(weight, style) {
+        var name = WEIGHT_NAMES[weight] || '';
+        var italic = (style === 'italic');
+        var full = 'Be Vietnam Pro' + (name ? ' ' + name : '') + (italic ? ' Italic' : '');
+        var ps = 'BeVietnamPro-' + (name || 'Regular') + (italic ? 'Italic' : '');
+        return { full: full, ps: ps };
+    }
+
+    function bufToBase64(bytes) {
+        var c = [];
+        for (var i = 0; i < bytes.length; i += 8192)
+            c.push(String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, bytes.length))));
+        return btoa(c.join(''));
+    }
+
+    // Thêm local() vào mỗi @font-face trong CSS đã fetch
+    function addLocalSrc(css) {
+        return css.replace(/@font-face\s*\{([^}]+)\}/g, function(m, block) {
+            var w = block.match(/font-weight:\s*(\d+)/);
+            var s = block.match(/font-style:\s*(\w+)/);
+            if (!w || !s) return m;
+            var ln = getLocalName(w[1], s[1]);
+            var nb = block.replace(/src:\s*/, "src: local('" + ln.full + "'), local('" + ln.ps + "'), ");
+            return '@font-face {' + nb + '}';
+        });
+    }
+
+    // --- BƯỚC 1: Inject local() @font-face + CSS ngay lập tức ---
+    // Dùng font đã cài trên máy → zero CSP errors
+    var localFaces = '';
+    var weights = ['100','200','300','400','500','600','700','800','900'];
+    var styles = ['normal','italic'];
+    for (var wi = 0; wi < weights.length; wi++) {
+        for (var si = 0; si < styles.length; si++) {
+            var ln = getLocalName(weights[wi], styles[si]);
+            localFaces += "@font-face{font-family:'Be Vietnam Pro';font-style:" + styles[si] +
+                ";font-weight:" + weights[wi] + ";font-display:swap;src:local('" +
+                ln.full + "'),local('" + ln.ps + "')}\n";
+        }
+    }
+    GM_addStyle(localFaces);
+
+    var customCSS = [
+        "body,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,b,u,strong,em,input,select,textarea,fieldset,legend,label{",
+        "  font-family:'Be Vietnam Pro',sans-serif!important;-webkit-font-smoothing:antialiased}",
         "div:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
         "span:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']),",
-        "button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']) {",
-        "    font-family: 'Be Vietnam Pro', sans-serif !important;",
-        "}",
-        "",
-        "/* 4. KHÔI PHỤC CHO CÁC SITE CÒN LẠI */",
-        ".material-icons, .material-icons-outlined, .material-symbols-outlined, .google-symbols, .mat-icon {",
-        "    font-family: 'Material Symbols Outlined', 'Material Icons', 'Google Symbols' !important;",
-        "    font-weight: normal !important;",
-        "    font-style: normal !important;",
-        "}",
-        "",
-        "[class*='tgico'], [class*='ico-'], .ico {",
-        "    font-family: 'icomoon', 'Telegram Icons', monospace !important;",
-        "    font-weight: normal !important;",
-        "    font-style: normal !important;",
-        "}"
+        "button:not([class*='icon']):not([class*='Icon']):not([class*='symbol']):not([class*='material']):not([class*='fa']):not([class*='tgico']):not([class*='ico']):not([class*='svg']){",
+        "  font-family:'Be Vietnam Pro',sans-serif!important}",
+        ".material-icons,.material-icons-outlined,.material-symbols-outlined,.google-symbols,.mat-icon{",
+        "  font-family:'Material Symbols Outlined','Material Icons','Google Symbols'!important;",
+        "  font-weight:normal!important;font-style:normal!important}",
+        "[class*='tgico'],[class*='ico-'],.ico{",
+        "  font-family:'icomoon','Telegram Icons',monospace!important;",
+        "  font-weight:normal!important;font-style:normal!important}"
     ].join("\n");
+    GM_addStyle(customCSS);
 
-    if (typeof GM_addStyle != 'undefined') {
-        GM_addStyle(css);
-    } else {
-        var node = document.createElement('style');
-        node.type = 'text/css';
-        node.appendChild(document.createTextNode(css));
-        var heads = document.getElementsByTagName('head');
-        if (heads.length > 0) {
-            heads[0].appendChild(node);
-        } else {
-            document.documentElement.appendChild(node);
+        // --- BƯỚC 2: Chỉ load web font nếu local() KHÔNG có ---
+    function loadWebFonts() {
+        try {
+            var cached = GM_getValue(CACHE_KEY, null);
+            if (cached && Date.now() - cached.ts < CACHE_TTL) {
+                GM_addStyle(cached.css);
+                return;
+            }
+        } catch(e) {}
+
+        GM_xmlhttpRequest({
+            method: 'GET', url: FONT_CSS_URL,
+            onload: function(resp) {
+                if (resp.status !== 200) return;
+                var css = resp.responseText;
+                var urlRe = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g;
+                var matches = [], m2;
+                while ((m2 = urlRe.exec(css)) !== null) matches.push(m2[1]);
+                var urls = matches.filter(function(v,i,a){ return a.indexOf(v)===i; });
+
+                if (urls.length === 0) {
+                    var f = addLocalSrc(css);
+                    GM_addStyle(f);
+                    try { GM_setValue(CACHE_KEY,{css:f,ts:Date.now()}); } catch(e){}
+                    return;
+                }
+
+                var done = 0, urlMap = {};
+                urls.forEach(function(fontUrl) {
+                    GM_xmlhttpRequest({
+                        method:'GET', url:fontUrl, responseType:'arraybuffer',
+                        onload: function(fr) {
+                            try {
+                                var b64 = bufToBase64(new Uint8Array(fr.response));
+                                urlMap[fontUrl] = 'data:font/woff2;base64,' + b64;
+                            } catch(e){}
+                            onDone();
+                        },
+                        onerror: function(){ onDone(); }
+                    });
+                });
+
+                function onDone() {
+                    if (++done < urls.length) return;
+                    var result = css;
+                    for (var u in urlMap) {
+                        while (result.indexOf(u) !== -1) result = result.replace(u, urlMap[u]);
+                    }
+                    result = addLocalSrc(result);
+                    GM_addStyle(result);
+                    try { GM_setValue(CACHE_KEY,{css:result,ts:Date.now()}); } catch(e){}
+                }
+            }
+        });
+    }
+
+    // Kiểm tra: nếu font đã cài local → bỏ qua web font → zero CSP errors
+    function checkLocal() {
+        if (document.fonts && document.fonts.check('16px "Be Vietnam Pro"')) {
+            return; // Font local OK, không cần web font
         }
+        loadWebFonts(); // Không có font local → thử data URI
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', checkLocal);
+    } else {
+        checkLocal();
     }
 })();
