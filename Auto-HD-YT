@@ -18,8 +18,8 @@
 // @grant               GM_listValues
 // @run-at              document-idle
 // @inject-into         page
-// @downloadURL         https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
-// @updateURL           https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
+// @downloadURL         https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Auto-HD-YT
+// @updateURL           https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Auto-HD-YT
 // @homepage            https://github.com/Hetboy95/Be-Vietnam-Pro-font-script
 // ==/UserScript==
 
