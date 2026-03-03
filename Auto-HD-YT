@@ -1,0 +1,411 @@
+// ==UserScript==
+// @name                YouTube HD Premium
+// @icon                https://www.google.com/s2/favicons?sz=64&domain=youtube.com
+// @version             1.0
+// @author              Nguyễn Ngọc Tuyên
+// @description         Auto lựa chọn chất lượng Video youtube mong muốn.
+// @match               *://www.youtube.com/*
+// @match               *://m.youtube.com/*
+// @match               *://www.youtube-nocookie.com/*
+// @exclude             *://www.youtube.com/live_chat*
+// @grant               GM.getValue
+// @grant               GM.setValue
+// @grant               GM.deleteValue
+// @grant               GM.listValues
+// @grant               GM_getValue
+// @grant               GM_setValue
+// @grant               GM_deleteValue
+// @grant               GM_listValues
+// @run-at              document-idle
+// @inject-into         page
+// @downloadURL         https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
+// @updateURL           https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Clear-chat-Aistudio
+// @homepage            https://github.com/Hetboy95/Be-Vietnam-Pro-font-script
+// ==/UserScript==
+
+/*jshint esversion: 11 */
+
+(function () {
+    'use strict';
+
+    const api = globalThis.youtubeHelperApi;
+    if (!api) return console.error('[YTHD] Helper API not found.');
+
+    const STORAGE_KEY = 'YTHD_settings';
+    const DEFAULT_SETTINGS = { targetResolution: 'hd2160' };
+
+    // Helper to create elements with props
+    const el = (tag, props = {}, children = []) => {
+        const element = document.createElementNS(props.xmlns || 'http://www.w3.org/1999/xhtml', tag);
+        if (props.xmlns) delete props.xmlns;
+        Object.entries(props).forEach(([k, v]) => k.startsWith('on') ? element.addEventListener(k.substring(2).toLowerCase(), v) : element.setAttribute(k === 'className' ? 'class' : k, v));
+        Object.entries(props.style || {}).forEach(([k, v]) => element.style[k] = v);
+        children.forEach(c => element.append(typeof c === 'string' ? document.createTextNode(c) : c));
+        return element;
+    };
+
+    const ICONS = {
+        pin: () => el('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 24 24', height: '24', width: '24' }, [
+            el('path', { xmlns: 'http://www.w3.org/2000/svg', d: 'M16,12V4H17V2H7V4H8V12L6,14V16H11.5V22H12.5V16H18V14L16,12Z', fill: 'currentColor' })
+        ])
+    };
+
+    const CSS = `
+        #ythd-animation-wrapper { position: relative; overflow: hidden; transition: height 0.25s ease-in-out; }
+        .ythd-slide-panel { position: absolute; width: 100%; top: 0; left: 0; transition: transform 0.25s ease-in-out; }
+        #ythd-mobile-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
+        .ythd-mobile-menu-box { background: #282828; color: white; padding: 16px; border-radius: 12px; min-width: 280px; max-width: 90%; font-family: "Roboto", "Arial", sans-serif; }
+        .ythd-mobile-title { font-size: 1.2em; margin-bottom: 16px; font-weight: 500; }
+        .ythd-menu-item { padding: 14px; cursor: pointer; border-radius: 8px; }
+        .ythd-menu-item.active { font-weight: bold; background: rgba(255, 255, 255, 0.1); }
+    `;
+
+    let userSettings = { ...DEFAULT_SETTINGS };
+    let embedPlayerEl = null; // Direct reference to embed player element
+
+    // --- Core Logic ---
+
+    // Directly set quality on a player element, bypassing the Helper API.
+    // Needed because the Helper API's internal player state is never populated in iframes.
+    function setResolutionDirect(playerEl) {
+        try {
+            if (!playerEl || typeof playerEl.getAvailableQualityData !== 'function') return;
+            const qualityData = playerEl.getAvailableQualityData();
+            if (!qualityData || qualityData.length === 0) return;
+
+            const targetValue = api.POSSIBLE_RESOLUTIONS[userSettings.targetResolution]?.p;
+            if (!targetValue) return;
+
+            const availableQualities = [...new Set(qualityData.map(q => q.quality))];
+            const bestQualityString = availableQualities
+                .filter(q => api.POSSIBLE_RESOLUTIONS[q] && api.POSSIBLE_RESOLUTIONS[q].p <= targetValue)
+                .sort((a, b) => api.POSSIBLE_RESOLUTIONS[b].p - api.POSSIBLE_RESOLUTIONS[a].p)[0];
+
+            if (!bestQualityString) return;
+
+            let normalCandidate = null;
+            let premiumCandidate = null;
+            for (const quality of qualityData) {
+                if (quality.quality === bestQualityString && quality.isPlayable) {
+                    if (quality.paygatedQualityDetails) premiumCandidate = quality;
+                    else normalCandidate = quality;
+                }
+            }
+
+            const optimal = premiumCandidate || normalCandidate;
+            if (optimal && typeof playerEl.setPlaybackQualityRange === 'function') {
+                playerEl.setPlaybackQualityRange(
+                    optimal.quality,
+                    optimal.quality,
+                    optimal.formatId || null
+                );
+                console.log(`[YTHD] Set embed quality to ${optimal.quality}`);
+            }
+        } catch (e) {
+            console.error('[YTHD] Error setting resolution directly:', e);
+        }
+    }
+
+    function setResolution() {
+        // Try the Helper API first (works on normal YouTube pages)
+        api.setPlaybackResolution(userSettings.targetResolution);
+
+        // Fallback for iframe/embed: call player methods directly
+        if (api.page.isIframe && embedPlayerEl) {
+            setResolutionDirect(embedPlayerEl);
+        }
+    }
+
+    function handlePlayerStateChange(playerState) {
+        const player = api.player.playerObject;
+        if (!player) return;
+
+        // State 1 = Playing
+        if (playerState === 1 && !player.hasAttribute('YTHD-set')) {
+            player.setAttribute('YTHD-set', 'true');
+            setResolution();
+        } else if (playerState === -1 && player.hasAttribute('YTHD-set')) {
+            player.removeAttribute('YTHD-set');
+        }
+    }
+
+    function processVideoLoad() {
+        setResolution();
+        const player = api.player.playerObject;
+        if (player && !player.hasAttribute('YTHD-listener')) {
+            player.addEventListener('onStateChange', handlePlayerStateChange);
+            player.setAttribute('YTHD-listener', 'true');
+        }
+    }
+
+    // --- Embed/Iframe Fallback ---
+    // The YouTube Helper API skips player state listeners in iframe contexts,
+    // so 'yt-helper-api-ready' never fires reliably and appState.player.api
+    // is never set. This fallback polls for the player and calls quality
+    // methods directly on the #movie_player DOM element.
+
+    function waitForEmbedPlayer() {
+        const MAX_ATTEMPTS = 60;  // 30 seconds (60 * 500ms)
+        let attempts = 0;
+
+        const poll = setInterval(() => {
+            attempts++;
+            if (attempts > MAX_ATTEMPTS) {
+                clearInterval(poll);
+                console.warn('[YTHD] Embed player detection timed out.');
+                return;
+            }
+
+            // Try to find the player element
+            const playerEl = document.querySelector('#movie_player');
+            if (!playerEl) return;
+
+            // Check if the player API is actually ready (has quality methods)
+            // In YouTube embeds, the #movie_player DOM element IS the player API
+            if (typeof playerEl.getAvailableQualityData !== 'function' ||
+                typeof playerEl.setPlaybackQualityRange !== 'function') return;
+
+            // Check if quality data is actually available (player loaded a video)
+            try {
+                const qualityData = playerEl.getAvailableQualityData();
+                if (!qualityData || qualityData.length === 0) return;
+            } catch (e) {
+                return; // Player not ready yet
+            }
+
+            // Player is ready! Store reference and set resolution.
+            clearInterval(poll);
+            embedPlayerEl = playerEl;
+            console.log('[YTHD] Embed player detected, setting resolution directly.');
+
+            // Set resolution directly on the player element
+            setResolutionDirect(embedPlayerEl);
+
+            // Listen for state changes to re-apply quality
+            if (typeof playerEl.addEventListener === 'function') {
+                playerEl.addEventListener('onStateChange', (state) => {
+                    // State 1 = Playing
+                    if (state === 1) {
+                        setResolutionDirect(embedPlayerEl);
+                    }
+                });
+            }
+
+            // Re-apply on video source changes (seek, ad end, etc.)
+            const videoEl = playerEl.querySelector('video');
+            if (videoEl) {
+                videoEl.addEventListener('loadeddata', () => {
+                    setTimeout(() => setResolutionDirect(embedPlayerEl), 300);
+                });
+            }
+        }, 500);
+    }
+
+    // --- Desktop UI ---
+
+    function setupDesktopMenu(qualityPanel) {
+        if (qualityPanel.querySelector('#ythd-animation-wrapper')) return;
+
+        const nativeHeader = qualityPanel.querySelector('.ytp-panel-header');
+        if (!nativeHeader) return;
+
+        const nativeTitleText = nativeHeader.querySelector('.ytp-panel-title')?.textContent.trim() || 'Quality';
+
+        // Create Trigger Header
+        const triggerLabel = el('span', { id: 'ythd-header-label' }, [`${api.POSSIBLE_RESOLUTIONS[userSettings.targetResolution].label} >`]);
+        const ythdHeaderTrigger = el('div', { id: 'ythd-header-trigger', className: 'ytp-panel-header', style: { cursor: 'pointer' }, onClick: (e) => { e.stopPropagation(); switchToYTHDMenu(); } }, [
+            el('div', { className: 'ytp-panel-title', style: { display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', padding: '16px' } }, [
+                el('span', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [ICONS.pin(), nativeTitleText]),
+                triggerLabel
+            ])
+        ]);
+
+        nativeHeader.after(ythdHeaderTrigger);
+
+        // Create Slide Structure
+        const nativePanel = el('div', { className: 'ythd-slide-panel' });
+        const customPanel = el('div', { className: 'ythd-slide-panel', style: { transform: 'translateX(100%)' } });
+        const animationWrapper = el('div', { id: 'ythd-animation-wrapper' }, [nativePanel, customPanel]);
+
+        // Move existing children to nativePanel
+        while (qualityPanel.children.length > 0) {
+            const child = qualityPanel.firstChild;
+            if (child === ythdHeaderTrigger || child === nativeHeader) {
+                // Keep header outside animation wrapper
+                qualityPanel.removeChild(child);
+            } else {
+                nativePanel.appendChild(child);
+            }
+        }
+
+        // Correct DOM order: Header -> Trigger -> Wrapper (Native + Custom)
+        qualityPanel.appendChild(nativeHeader);
+        qualityPanel.appendChild(ythdHeaderTrigger);
+        qualityPanel.appendChild(animationWrapper);
+
+        // Set initial height
+        animationWrapper.style.height = `${nativePanel.scrollHeight}px`;
+
+        const slide = (forward) => {
+            const current = forward ? nativePanel : customPanel;
+            const next = forward ? customPanel : nativePanel;
+
+            next.style.transition = 'none';
+            next.style.transform = forward ? 'translateX(100%)' : 'translateX(-100%)';
+            void next.offsetHeight; // force reflow
+
+            animationWrapper.style.height = `${next.scrollHeight}px`;
+            next.style.transition = 'transform 0.25s ease-in-out';
+            current.style.transform = forward ? 'translateX(-100%)' : 'translateX(100%)';
+            next.style.transform = 'translateX(0)';
+        };
+
+        const switchToNativeMenu = () => {
+            const label = document.getElementById('ythd-header-label');
+            if (label) label.textContent = `${api.POSSIBLE_RESOLUTIONS[userSettings.targetResolution].label} >`;
+            slide(false);
+        };
+
+        const switchToYTHDMenu = () => {
+            customPanel.replaceChildren(); // Clear old
+
+            const backBtn = el('button', { className: 'ytp-panel-back-button ytp-button', style: { padding: '0' }, onClick: (e) => { e.stopPropagation(); switchToNativeMenu(); } });
+            const title = el('div', { className: 'ytp-panel-title', style: { display: 'flex', alignItems: 'center', gap: '8px' } }, [ICONS.pin(), nativeTitleText]);
+            const header = el('div', { className: 'ytp-panel-header' }, [backBtn, title]);
+
+            const menu = el('div', { className: 'ytp-panel-menu' });
+
+            Object.entries(api.POSSIBLE_RESOLUTIONS).forEach(([key, value]) => {
+                const isSelected = userSettings.targetResolution === key;
+                const menuItem = el('div', {
+                    className: 'ytp-menuitem',
+                    role: 'menuitemradio',
+                    'aria-checked': isSelected.toString(),
+                    onClick: async (e) => {
+                        e.stopPropagation();
+                        if (userSettings.targetResolution !== key) {
+                            userSettings.targetResolution = key;
+                            await api.saveToStorage(STORAGE_KEY, userSettings);
+                            setResolution();
+                            switchToNativeMenu();
+                        }
+                    }
+                }, [
+                    el('div', { className: 'ytp-menuitem-label' }, [`${value.p}p ${value.label.includes('K') ? `(${value.label})` : ''}`.trim()])
+                ]);
+                menu.appendChild(menuItem);
+            });
+
+            customPanel.append(header, menu);
+            slide(true);
+        };
+    }
+
+    // --- Mobile UI ---
+
+    function showMobileOverlay(onClose) {
+        if (document.getElementById('ythd-mobile-overlay')) return;
+
+        const menuBox = el('div', { className: 'ythd-mobile-menu-box' }, [
+            el('div', { className: 'ythd-mobile-title' }, ['Set Quality Preference'])
+        ]);
+
+        Object.entries(api.POSSIBLE_RESOLUTIONS).forEach(([key, value]) => {
+            const isActive = userSettings.targetResolution === key;
+            menuBox.appendChild(el('div', {
+                className: `ythd-menu-item${isActive ? ' active' : ''}`,
+                onClick: async () => {
+                    userSettings.targetResolution = key;
+                    await api.saveToStorage(STORAGE_KEY, userSettings);
+                    setResolution();
+                    overlay.remove();
+                    if (onClose) onClose();
+                }
+            }, [`${value.p}p ${value.label.includes('K') ? `(${value.label})` : ''}`.trim()]));
+        });
+
+        const overlay = el('div', { id: 'ythd-mobile-overlay', onClick: (e) => { if (e.target === overlay) overlay.remove(); } }, [menuBox]);
+        document.body.appendChild(overlay);
+    }
+
+    function injectMobileTrigger(bottomSheet) {
+        if (bottomSheet.querySelector('.ythd-mobile-trigger')) return;
+
+        const template = bottomSheet.querySelector('[role=menuitem], ytm-menu-service-item-renderer');
+        if (!template) return;
+
+        const trigger = template.cloneNode(true);
+        trigger.classList.add('ythd-mobile-trigger');
+        trigger.removeAttribute('aria-disabled');
+
+        const icon = trigger.querySelector('yt-icon, c3-icon');
+        if (icon) icon.replaceChildren(ICONS.pin());
+
+        const label = trigger.querySelector('.yt-formatted-string, .menu-service-item-text');
+        if (label) label.textContent = 'Set Quality Preference';
+
+        trigger.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // Close native menu
+            document.querySelector('ytw-scrim')?.click();
+            document.querySelector('.yt-spec-bottom-sheet-layout-scrim')?.click();
+            showMobileOverlay();
+        };
+
+        template.parentElement.insertBefore(trigger, template.parentElement.firstChild);
+    }
+
+    // --- Observers ---
+
+    function startDesktopObserver() {
+        const observer = new MutationObserver((mutations) => {
+            const relevantMutation = mutations.find(m =>
+                m.addedNodes.length &&
+                (m.target.classList?.contains('ytp-popup') || m.target.querySelector?.('.ytp-quality-menu'))
+            );
+
+            if (relevantMutation || document.querySelector('.ytp-quality-menu')) {
+                const qualityMenu = document.querySelector('.ytp-panel.ytp-quality-menu');
+                if (qualityMenu && !qualityMenu.querySelector('#ythd-animation-wrapper')) {
+                    setupDesktopMenu(qualityMenu);
+                }
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    function startMobileObserver() {
+        const observer = new MutationObserver(() => {
+            const bottomSheet = document.querySelector('bottom-sheet-container:not(:empty), ytm-bottom-sheet-renderer:not(:empty)');
+            if (bottomSheet) {
+                injectMobileTrigger(bottomSheet);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // --- Initialization ---
+
+    async function initialize() {
+        document.head.appendChild(el('style', {}, [CSS]));
+
+        userSettings = await api.loadAndCleanFromStorage(STORAGE_KEY, DEFAULT_SETTINGS);
+        await api.saveToStorage(STORAGE_KEY, userSettings);
+
+        api.page.isMobile ? startMobileObserver() : startDesktopObserver();
+
+        api.eventTarget.addEventListener('yt-helper-api-ready', processVideoLoad);
+
+        if (api.player.playerObject) processVideoLoad();
+
+        // Fallback for iframe/embed contexts (e.g., YouTube embeds on Reddit).
+        // The Helper API skips player state listeners in iframes, so
+        // 'yt-helper-api-ready' never fires. We poll for the player instead.
+        if (api.page.isIframe) {
+            waitForEmbedPlayer();
+        }
+    }
+
+    initialize();
+})();
