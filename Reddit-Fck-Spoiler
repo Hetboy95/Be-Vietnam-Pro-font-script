@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit Auto-Reveal Spoilers
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.5
 // @description  Tự động hiện tất cả spoiler trên mọi giao diện Reddit mà không cần click
 // @author       Nguyễn Ngọc Tuyên
 // @match        https://www.reddit.com/*
@@ -17,8 +17,7 @@
     'use strict';
 
     // ============================================================
-    // 1. CSS: Chỉ xử lý spoiler kiểu Markdown cũ (Old Reddit)
-    //    KHÔNG can thiệp CSS vào shreddit-spoiler (Shadow DOM)
+    // 1. CSS: Xử lý spoiler kiểu Markdown cũ (Old Reddit)
     // ============================================================
     const style = document.createElement('style');
     style.textContent = `
@@ -41,50 +40,133 @@
     document.head.appendChild(style);
 
     // ============================================================
-    // 2. JavaScript: Reveal spoiler bằng nhiều phương pháp
+    // 2. Kiểm tra người dùng đang tương tác hay không
+    // ============================================================
+    function isUserInteracting() {
+        const active = document.activeElement;
+        if (!active || active === document.body) return false;
+
+        const tag = active.tagName.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || active.isContentEditable) {
+            return true;
+        }
+
+        if (active.closest &&
+            (active.closest('reddit-search-large') ||
+                active.closest('[data-testid="search"]') ||
+                active.closest('faceplate-search-input') ||
+                active.closest('[role="search"]') ||
+                active.closest('[role="combobox"]') ||
+                active.closest('[role="dialog"]') ||
+                active.closest('[role="listbox"]'))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    // ============================================================
+    // 3. Lưu và khôi phục focus — tránh mất focus khi click
+    // ============================================================
+    function withFocusProtection(fn) {
+        const previousFocus = document.activeElement;
+        fn();
+        // Khôi phục focus nếu bị mất
+        if (previousFocus && previousFocus !== document.activeElement &&
+            previousFocus !== document.body) {
+            try { previousFocus.focus(); } catch (e) { }
+        }
+    }
+
+    // ============================================================
+    // 4. Reveal functions
     // ============================================================
 
     /**
-     * Reveal <shreddit-spoiler> elements
+     * Reveal <shreddit-spoiler> — inline text spoiler trong bình luận
+     * Dùng non-bubbling click để trigger reveal nội bộ
      */
     function revealShredditSpoilers() {
-        const spoilers = document.querySelectorAll('shreddit-spoiler');
-        spoilers.forEach(el => {
-            // Bỏ qua nếu đã revealed
+        document.querySelectorAll('shreddit-spoiler').forEach(el => {
             if (el.hasAttribute('revealed') && el.getAttribute('revealed') !== 'false') return;
 
-            // Phương pháp 1: Gọi .click() trực tiếp trên element
-            // Web component thường lắng nghe click event
+            // Non-bubbling click trên chính element
             try {
-                el.click();
+                el.dispatchEvent(new MouseEvent('click', {
+                    bubbles: false,
+                    cancelable: true,
+                    view: window
+                }));
             } catch (e) { }
 
-            // Phương pháp 2: Nếu click() không hoạt động, thử tìm button trong Shadow DOM
-            if (el.shadowRoot) {
-                try {
-                    const btn = el.shadowRoot.querySelector('button, [role="button"]');
-                    if (btn) btn.click();
-                } catch (e) { }
+            // Fallback: click button bên trong Shadow DOM
+            if (!el.hasAttribute('revealed') || el.getAttribute('revealed') === 'false') {
+                if (el.shadowRoot) {
+                    try {
+                        const btn = el.shadowRoot.querySelector('button, [role="button"]');
+                        if (btn) {
+                            btn.dispatchEvent(new MouseEvent('click', {
+                                bubbles: true, // bubble trong shadow DOM nhưng không thoát ra ngoài
+                                cancelable: true,
+                                view: window
+                            }));
+                        }
+                    } catch (e) { }
+                }
+                // Fallback cuối: set attribute trực tiếp
+                el.setAttribute('revealed', '');
             }
         });
     }
 
     /**
      * Reveal <shreddit-blurred-container reason="spoiler">
+     *
+     * QUAN TRỌNG: KHÔNG click lên container (gây navigate đến post)
+     * Chỉ click nút "View spoiler" BÊN TRONG Shadow DOM
      */
     function revealBlurredContainers() {
-        const containers = document.querySelectorAll('shreddit-blurred-container[reason="spoiler"]');
-        containers.forEach(el => {
+        document.querySelectorAll('shreddit-blurred-container[reason="spoiler"]').forEach(el => {
+            // Bỏ qua nếu đã unblur
             if (el.getAttribute('blurred') === 'false') return;
-
-            try { el.click(); } catch (e) { }
+            // Đánh dấu đã xử lý để không click lặp
+            if (el.dataset.spoilerRevealed === 'true') return;
 
             if (el.shadowRoot) {
+                // Tìm nút "View spoiler" trong Shadow DOM và click nó
+                const btn = el.shadowRoot.querySelector('button');
+                if (btn) {
+                    try {
+                        btn.click(); // Click button trong shadow DOM — an toàn, không navigate
+                        el.dataset.spoilerRevealed = 'true';
+                        return;
+                    } catch (e) { }
+                }
+
+                // Thử tìm bất kỳ element clickable nào
+                const clickable = el.shadowRoot.querySelector('[role="button"], a[href="#"]');
+                if (clickable) {
+                    try {
+                        clickable.click();
+                        el.dataset.spoilerRevealed = 'true';
+                        return;
+                    } catch (e) { }
+                }
+            }
+
+            // Fallback: Thử tìm button trong Light DOM (một số phiên bản Reddit)
+            const lightBtn = el.querySelector('button');
+            if (lightBtn && lightBtn.textContent.toLowerCase().includes('spoiler')) {
                 try {
-                    const btn = el.shadowRoot.querySelector('button, [role="button"]');
-                    if (btn) btn.click();
+                    lightBtn.click();
+                    el.dataset.spoilerRevealed = 'true';
+                    return;
                 } catch (e) { }
             }
+
+            // Fallback cuối: set attribute
+            el.setAttribute('blurred', 'false');
+            el.dataset.spoilerRevealed = 'true';
         });
     }
 
@@ -92,10 +174,8 @@
      * Reveal spoiler kiểu Markdown cũ
      */
     function revealMarkdownSpoilers() {
-        document.querySelectorAll('.md-spoiler-text').forEach(el => {
-            if (!el.classList.contains('md-spoiler-text--revealed')) {
-                el.click();
-            }
+        document.querySelectorAll('.md-spoiler-text:not(.md-spoiler-text--revealed)').forEach(el => {
+            el.click();
         });
     }
 
@@ -103,13 +183,17 @@
      * Master function
      */
     function revealAll() {
-        revealShredditSpoilers();
-        revealBlurredContainers();
-        revealMarkdownSpoilers();
+        if (isUserInteracting()) return;
+
+        withFocusProtection(() => {
+            revealShredditSpoilers();
+            revealBlurredContainers();
+            revealMarkdownSpoilers();
+        });
     }
 
     // ============================================================
-    // 3. MutationObserver: Theo dõi DOM thay đổi
+    // 5. MutationObserver
     // ============================================================
     let debounceTimer = null;
     function debouncedReveal() {
@@ -127,12 +211,12 @@
     });
 
     // ============================================================
-    // 4. Khởi động
+    // 6. Khởi động
     // ============================================================
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Chạy lần đầu - delay để đảm bảo web components đã render
+    // Chạy lần đầu
     setTimeout(revealAll, 1500);
 
     // SPA navigation hooks
@@ -148,7 +232,7 @@
     };
     window.addEventListener('popstate', () => setTimeout(revealAll, 1500));
 
-    // Backup interval mỗi 2 giây
-    setInterval(revealAll, 2000);
+    // Backup interval mỗi 3 giây
+    setInterval(revealAll, 3000);
 
 })();
