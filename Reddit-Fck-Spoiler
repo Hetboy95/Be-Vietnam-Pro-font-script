@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Reddit Auto-Reveal Spoilers
 // @namespace    http://tampermonkey.net/
-// @version      4.5
-// @description  Tự động hiện tất cả spoiler trên mọi giao diện Reddit mà không cần click
+// @version      4.6
+// @description  Tự động hiện spoiler trên Reddit Shreddit/new Reddit mà không cần click
 // @author       Nguyễn Ngọc Tuyên
 // @match        https://www.reddit.com/*
 // @match        https://sh.reddit.com/*
 // @match        https://new.reddit.com/*
 // @grant        none
-// @run-at       document-idle
+// @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
 // @updateURL    https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/Reddit-Fck-Spoiler
 // ==/UserScript==
@@ -16,223 +16,176 @@
 (function () {
     'use strict';
 
-    // ============================================================
-    // 1. CSS: Xử lý spoiler kiểu Markdown cũ (Old Reddit)
-    // ============================================================
-    const style = document.createElement('style');
-    style.textContent = `
-        /* === Giao diện cũ (Old Reddit / Markdown) === */
-        .md-spoiler-text,
-        .md-spoiler-text:hover,
-        .md-spoiler-text:active {
-            background-color: transparent !important;
-            color: inherit !important;
-            cursor: auto !important;
-        }
+    const SELECTORS = [
+        'shreddit-spoiler',
+        'shreddit-blurred-container[reason="spoiler"]',
+        '.md-spoiler-text',
+        '[data-testid="spoiler-text"]',
+        'span[class*="spoiler"]'
+    ].join(',');
 
-        [data-testid="spoiler-text"],
-        span[class*="spoiler"] {
-            background-color: transparent !important;
-            color: inherit !important;
-            cursor: auto !important;
-        }
-    `;
-    document.head.appendChild(style);
+    function injectStyle() {
+        if (document.getElementById('reddit-auto-reveal-spoilers-style')) return;
 
-    // ============================================================
-    // 2. Kiểm tra người dùng đang tương tác hay không
-    // ============================================================
+        const style = document.createElement('style');
+        style.id = 'reddit-auto-reveal-spoilers-style';
+        style.textContent = `
+            .md-spoiler-text,
+            .md-spoiler-text:hover,
+            .md-spoiler-text:active,
+            [data-testid="spoiler-text"],
+            span[class*="spoiler"] {
+                background-color: transparent !important;
+                color: inherit !important;
+                filter: none !important;
+                -webkit-text-fill-color: inherit !important;
+                cursor: auto !important;
+            }
+
+            shreddit-spoiler[revealed],
+            shreddit-spoiler[revealed="true"] {
+                cursor: auto !important;
+            }
+
+            shreddit-blurred-container[reason="spoiler"][blurred="false"] {
+                filter: none !important;
+            }
+        `;
+
+        (document.head || document.documentElement).appendChild(style);
+    }
+
     function isUserInteracting() {
         const active = document.activeElement;
         if (!active || active === document.body) return false;
 
-        const tag = active.tagName.toLowerCase();
+        const tag = active.tagName ? active.tagName.toLowerCase() : '';
         if (tag === 'input' || tag === 'textarea' || active.isContentEditable) {
             return true;
         }
 
-        if (active.closest &&
-            (active.closest('reddit-search-large') ||
-                active.closest('[data-testid="search"]') ||
-                active.closest('faceplate-search-input') ||
-                active.closest('[role="search"]') ||
-                active.closest('[role="combobox"]') ||
-                active.closest('[role="dialog"]') ||
-                active.closest('[role="listbox"]'))) {
-            return true;
+        return Boolean(
+            active.closest &&
+            active.closest(
+                'reddit-search-large, [data-testid="search"], faceplate-search-input, [role="search"], [role="combobox"], [role="dialog"], [role="listbox"]'
+            )
+        );
+    }
+
+    function revealMarkdownSpoiler(el) {
+        el.classList.add('md-spoiler-text--revealed');
+        el.style.setProperty('background-color', 'transparent', 'important');
+        el.style.setProperty('color', 'inherit', 'important');
+        el.style.setProperty('filter', 'none', 'important');
+        el.style.setProperty('-webkit-text-fill-color', 'inherit', 'important');
+    }
+
+    function revealInlineShredditSpoiler(el) {
+        if (el.revealed === true || el.getAttribute('revealed') === 'true' || el.hasAttribute('revealed')) {
+            return;
         }
 
-        return false;
+        el.revealed = true;
+        el.setAttribute('revealed', 'true');
     }
 
-    // ============================================================
-    // 3. Lưu và khôi phục focus — tránh mất focus khi click
-    // ============================================================
-    function withFocusProtection(fn) {
-        const previousFocus = document.activeElement;
-        fn();
-        // Khôi phục focus nếu bị mất
-        if (previousFocus && previousFocus !== document.activeElement &&
-            previousFocus !== document.body) {
-            try { previousFocus.focus(); } catch (e) { }
+    function revealBlurredContainer(el) {
+        if (el.dataset.spoilerRevealed === 'true') return;
+
+        if (el.getAttribute('is-richtext-content') !== null) {
+            const articleBody = el.querySelector("[property='schema:articleBody']");
+
+            if (articleBody && el.getAttribute('mode') !== 'wrap') {
+                el.replaceWith(articleBody);
+                return;
+            }
         }
+
+        el.blurred = false;
+        el.setAttribute('blurred', 'false');
+        el.dataset.spoilerRevealed = 'true';
     }
 
-    // ============================================================
-    // 4. Reveal functions
-    // ============================================================
+    function revealNode(root) {
+        if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
 
-    /**
-     * Reveal <shreddit-spoiler> — inline text spoiler trong bình luận
-     * Dùng non-bubbling click để trigger reveal nội bộ
-     */
-    function revealShredditSpoilers() {
-        document.querySelectorAll('shreddit-spoiler').forEach(el => {
-            if (el.hasAttribute('revealed') && el.getAttribute('revealed') !== 'false') return;
+        if (root.matches && root.matches('shreddit-spoiler')) {
+            revealInlineShredditSpoiler(root);
+        } else if (root.matches && root.matches('shreddit-blurred-container[reason="spoiler"]')) {
+            revealBlurredContainer(root);
+        } else if (root.matches && root.matches('.md-spoiler-text, [data-testid="spoiler-text"], span[class*="spoiler"]')) {
+            revealMarkdownSpoiler(root);
+        }
 
-            // Non-bubbling click trên chính element
-            try {
-                el.dispatchEvent(new MouseEvent('click', {
-                    bubbles: false,
-                    cancelable: true,
-                    view: window
-                }));
-            } catch (e) { }
+        if (!root.querySelectorAll) return;
 
-            // Fallback: click button bên trong Shadow DOM
-            if (!el.hasAttribute('revealed') || el.getAttribute('revealed') === 'false') {
-                if (el.shadowRoot) {
-                    try {
-                        const btn = el.shadowRoot.querySelector('button, [role="button"]');
-                        if (btn) {
-                            btn.dispatchEvent(new MouseEvent('click', {
-                                bubbles: true, // bubble trong shadow DOM nhưng không thoát ra ngoài
-                                cancelable: true,
-                                view: window
-                            }));
-                        }
-                    } catch (e) { }
-                }
-                // Fallback cuối: set attribute trực tiếp
-                el.setAttribute('revealed', '');
+        root.querySelectorAll(SELECTORS).forEach((el) => {
+            if (el.matches('shreddit-spoiler')) {
+                revealInlineShredditSpoiler(el);
+                return;
             }
+
+            if (el.matches('shreddit-blurred-container[reason="spoiler"]')) {
+                revealBlurredContainer(el);
+                return;
+            }
+
+            revealMarkdownSpoiler(el);
         });
     }
 
-    /**
-     * Reveal <shreddit-blurred-container reason="spoiler">
-     *
-     * QUAN TRỌNG: KHÔNG click lên container (gây navigate đến post)
-     * Chỉ click nút "View spoiler" BÊN TRONG Shadow DOM
-     */
-    function revealBlurredContainers() {
-        document.querySelectorAll('shreddit-blurred-container[reason="spoiler"]').forEach(el => {
-            // Bỏ qua nếu đã unblur
-            if (el.getAttribute('blurred') === 'false') return;
-            // Đánh dấu đã xử lý để không click lặp
-            if (el.dataset.spoilerRevealed === 'true') return;
-
-            if (el.shadowRoot) {
-                // Tìm nút "View spoiler" trong Shadow DOM và click nó
-                const btn = el.shadowRoot.querySelector('button');
-                if (btn) {
-                    try {
-                        btn.click(); // Click button trong shadow DOM — an toàn, không navigate
-                        el.dataset.spoilerRevealed = 'true';
-                        return;
-                    } catch (e) { }
-                }
-
-                // Thử tìm bất kỳ element clickable nào
-                const clickable = el.shadowRoot.querySelector('[role="button"], a[href="#"]');
-                if (clickable) {
-                    try {
-                        clickable.click();
-                        el.dataset.spoilerRevealed = 'true';
-                        return;
-                    } catch (e) { }
-                }
-            }
-
-            // Fallback: Thử tìm button trong Light DOM (một số phiên bản Reddit)
-            const lightBtn = el.querySelector('button');
-            if (lightBtn && lightBtn.textContent.toLowerCase().includes('spoiler')) {
-                try {
-                    lightBtn.click();
-                    el.dataset.spoilerRevealed = 'true';
-                    return;
-                } catch (e) { }
-            }
-
-            // Fallback cuối: set attribute
-            el.setAttribute('blurred', 'false');
-            el.dataset.spoilerRevealed = 'true';
-        });
-    }
-
-    /**
-     * Reveal spoiler kiểu Markdown cũ
-     */
-    function revealMarkdownSpoilers() {
-        document.querySelectorAll('.md-spoiler-text:not(.md-spoiler-text--revealed)').forEach(el => {
-            el.click();
-        });
-    }
-
-    /**
-     * Master function
-     */
     function revealAll() {
         if (isUserInteracting()) return;
-
-        withFocusProtection(() => {
-            revealShredditSpoilers();
-            revealBlurredContainers();
-            revealMarkdownSpoilers();
-        });
+        revealNode(document.documentElement);
     }
 
-    // ============================================================
-    // 5. MutationObserver
-    // ============================================================
     let debounceTimer = null;
-    function debouncedReveal() {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(revealAll, 300);
+    function scheduleReveal() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(revealAll, 80);
     }
+
+    injectStyle();
 
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            if (mutation.addedNodes.length > 0) {
-                debouncedReveal();
-                break;
+            if (mutation.type === 'attributes') {
+                revealNode(mutation.target);
+                continue;
+            }
+
+            for (const node of mutation.addedNodes) {
+                revealNode(node);
             }
         }
     });
 
-    // ============================================================
-    // 6. Khởi động
-    // ============================================================
+    observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['revealed', 'blurred', 'mode', 'is-richtext-content']
+    });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('readystatechange', scheduleReveal, true);
+    window.addEventListener('load', scheduleReveal, { once: true });
+    window.addEventListener('popstate', () => setTimeout(revealAll, 300));
 
-    // Chạy lần đầu
-    setTimeout(revealAll, 1500);
-
-    // SPA navigation hooks
-    const origPushState = history.pushState;
+    const originalPushState = history.pushState;
     history.pushState = function () {
-        origPushState.apply(this, arguments);
-        setTimeout(revealAll, 1500);
+        const result = originalPushState.apply(this, arguments);
+        setTimeout(revealAll, 300);
+        return result;
     };
-    const origReplaceState = history.replaceState;
+
+    const originalReplaceState = history.replaceState;
     history.replaceState = function () {
-        origReplaceState.apply(this, arguments);
-        setTimeout(revealAll, 1500);
+        const result = originalReplaceState.apply(this, arguments);
+        setTimeout(revealAll, 300);
+        return result;
     };
-    window.addEventListener('popstate', () => setTimeout(revealAll, 1500));
 
-    // Backup interval mỗi 3 giây
-    setInterval(revealAll, 3000);
-
+    setTimeout(revealAll, 300);
+    setTimeout(revealAll, 1200);
+    setInterval(revealAll, 2500);
 })();
