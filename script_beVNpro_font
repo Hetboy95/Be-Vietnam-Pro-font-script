@@ -5,6 +5,8 @@
 // @description Dùng font Be Vietnam Pro cho mọi trang, không lỗi icon
 // @author      Copilot
 // @match       *://*/*
+// @exclude     *://aistudio.google.com/*
+// @exclude     *://fonts.google.com/*
 // @grant       GM_addStyle
 // @run-at      document-end
 // @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/script_beVNpro_font
