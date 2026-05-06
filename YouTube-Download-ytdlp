@@ -4,7 +4,7 @@
 // @match       *://*.youtube.com/*
 // @grant       none
 // @run-at      document-idle
-// @version     11.1
+// @version     11.5
 // @author      Nguyễn Ngọc Tuyên
 // @description Tải video YouTube với phong cách nút giống nút Dịch Comment
 // @downloadURL https://raw.githubusercontent.com/Hetboy95/Be-Vietnam-Pro-font-script/refs/heads/main/YouTube-Download-ytdlp
@@ -15,6 +15,11 @@
     'use strict';
 
     const BTN_ID = 'universal-ytdlp-btn';
+    const STYLE_ID = 'ytdlp-btn-style';
+
+    function isDarkMode() {
+        return !!document.querySelector("html[dark]");
+    }
 
     const btoaUrl = (url) => {
         return btoa(url).replace(/\//g, "_").replace(/\+/g, "-").replace(/\=/g, "");
@@ -28,6 +33,21 @@
         window.location.href = finalUrl;
     };
 
+    const injectStyles = () => {
+        if (document.getElementById(STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `
+            #${BTN_ID}:hover {
+                background-color: rgba(0,0,0,0.05) !important;
+            }
+            html[dark] #${BTN_ID}:hover {
+                background-color: rgba(255,255,255,0.1) !important;
+            }
+        `;
+        document.head.appendChild(style);
+    };
+
     const createSafeSvgIcon = () => {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('viewBox', '0 0 24 24');
@@ -38,41 +58,46 @@
         return svg;
     };
 
+    const applyButtonTheme = (btn) => {
+        const isDark = isDarkMode();
+        btn.style.borderColor = isDark ? "#666" : "#ccc";
+        btn.style.color = isDark ? "#fff" : "#0f0f0f";
+    };
+
     const createButton = () => {
         const btn = document.createElement('button');
         btn.id = BTN_ID;
 
-        // Style giả lập nút "Dịch Comment"
         btn.style.cssText = `
             display: inline-flex;
             align-items: center;
             justify-content: center;
             background: transparent;
-            border: 1px solid var(--yt-spec-10-percent-layer, #e5e5e5);
+            border: 1px solid #ccc;
             border-radius: 18px;
             padding: 0 15px;
-            height: 34px;
+            height: 32px;
             cursor: pointer;
             margin-left: 10px;
             font-family: "Roboto","Arial",sans-serif;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            color: var(--yt-spec-text-primary);
-            transition: background 0.2s;
+            color: #0f0f0f;
+            transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
             white-space: nowrap;
             width: auto;
+            box-sizing: border-box;
         `;
 
-        // Hiệu ứng hover
-        btn.onmouseover = () => btn.style.background = 'var(--yt-spec-10-percent-layer, rgba(0,0,0,0.05))';
-        btn.onmouseout = () => btn.style.background = 'transparent';
+        // Áp dụng màu theo theme hiện tại
+        applyButtonTheme(btn);
 
         // Icon
         btn.appendChild(createSafeSvgIcon());
 
         // Text
         const textSpan = document.createElement('span');
-        textSpan.textContent = 'Tải xuống';
+        textSpan.textContent = 'Yt-dlp';
         btn.appendChild(textSpan);
 
         btn.addEventListener('click', (e) => {
@@ -86,18 +111,22 @@
 
     const insertButton = () => {
         if (!window.location.pathname.startsWith('/watch')) return;
-        if (document.getElementById(BTN_ID)) return;
 
-        // Tìm khu vực chứa nút "Dịch Comment" hoặc "Sắp xếp"
-        // Container chính xác nhất là thẻ #title bên trong header bình luận
+        const existing = document.getElementById(BTN_ID);
+        if (existing) {
+            // Cập nhật theme nếu nút đã tồn tại (user chuyển dark/light)
+            applyButtonTheme(existing);
+            return;
+        }
+
         const commentHeader = document.querySelector('ytd-comments-header-renderer #title');
 
         if (commentHeader) {
+            injectStyles();
             const btn = createButton();
             commentHeader.appendChild(btn);
         }
     };
 
-    // Chạy kiểm tra mỗi giây để chèn nút khi trang load xong
     setInterval(insertButton, 1000);
 })();
